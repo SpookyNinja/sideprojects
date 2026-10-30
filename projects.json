@@ -28,5 +28,11 @@
     "description": "Watch a small transformer read a sentence and write an answer token by token, with its embeddings, attention and neurons shown live.",
     "path": "llm-inside/llm-inside.html",
     "tags": ["AI", "visualization", "transformer"]
+  },
+  {
+    "name": "Mandelbrot & Julia Explorer",
+    "description": "Zoom into the Mandelbrot set on the GPU and watch the matching Julia set change as you move over it.",
+    "path": "mandelbrot-julia/fractal.html",
+    "tags": ["math", "fractal", "WebGL"]
   }
 ]
