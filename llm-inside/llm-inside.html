@@ -1,0 +1,460 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Inside a Tiny LLM</title>
+<style>
+  :root { --bg:#070a16; --panel:#0e1226; --line:rgba(255,255,255,.12); --text:#d8dcee; --dim:#8a90aa; --accent:#6c86ff; --green:#46ff84; --warm:#ff9a3c; --cool:#3c9bff; }
+  * { box-sizing:border-box; }
+  html, body { margin:0; background:var(--bg); color:var(--text); font:14px/1.45 system-ui, "Segoe UI", sans-serif; }
+  body { padding:14px 14px 70px; max-width:1700px; margin:0 auto; }
+  h1 { font-size:20px; margin:0 0 2px; letter-spacing:.03em; }
+  .sub { color:var(--dim); font-size:13px; margin-bottom:12px; max-width:900px; }
+  button { background:#1b2038; color:var(--text); border:1px solid var(--line); border-radius:7px; padding:6px 11px; cursor:pointer; font:inherit; }
+  button:hover:not(:disabled) { background:#272e52; }
+  button:disabled { opacity:.4; cursor:default; }
+  button.primary { background:#2e4bd6; border-color:#4a66f0; color:#fff; font-weight:600; }
+  button.primary:hover:not(:disabled) { background:#3b5af0; }
+  .bar { display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-bottom:8px; }
+  #prompt { flex:1; min-width:240px; background:#0b0e1c; color:var(--text); border:1px solid var(--line); border-radius:7px; padding:7px 10px; font:15px ui-monospace, Menlo, Consolas, monospace; }
+  #prompt:focus { outline:1px solid var(--accent); }
+  .chip { font-size:12px; padding:3px 9px; border-radius:99px; color:var(--dim); }
+  .chip:hover:not(:disabled) { color:var(--text); }
+  #warn { color:#ff7a7a; font-size:12px; min-height:16px; margin:-2px 0 6px; }
+  #steps { display:flex; gap:0; margin:10px 0; overflow-x:auto; padding-bottom:4px; }
+  .step { flex:1 0 108px; position:relative; background:var(--panel); border:1px solid var(--line); padding:6px 8px 6px 12px; cursor:pointer; text-align:left; border-radius:0; clip-path:polygon(0 0, calc(100% - 11px) 0, 100% 50%, calc(100% - 11px) 100%, 0 100%, 11px 50%); }
+  .step:first-child { clip-path:polygon(0 0, calc(100% - 11px) 0, 100% 50%, calc(100% - 11px) 100%, 0 100%); padding-left:8px; }
+  .step b { display:block; font-size:12px; }
+  .step span { font-size:11px; color:var(--dim); }
+  .step.done { background:#151b38; }
+  .step.on { background:#2e4bd6; color:#fff; }
+  .step.on span { color:#cfd6ff; }
+  #main { display:grid; grid-template-columns:minmax(0,1fr) 340px; gap:12px; align-items:start; }
+  @media (max-width:1100px) { #main { grid-template-columns:1fr; } }
+  #stage { background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:8px; overflow-x:auto; }
+  canvas { display:block; }
+  #side { display:flex; flex-direction:column; gap:10px; }
+  .card { background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:10px 12px; }
+  .card h2 { font-size:12px; margin:0 0 6px; color:var(--dim); text-transform:uppercase; letter-spacing:.08em; font-weight:600; }
+  #story { font-size:13.5px; }
+  #story b { color:#fff; } #story .t { font-family:ui-monospace, Menlo, Consolas, monospace; color:var(--green); }
+  #story .n { font-variant-numeric:tabular-nums; color:#ffd84a; }
+  #out { font:15px ui-monospace, Menlo, Consolas, monospace; word-break:break-word; }
+  #out .gen { color:var(--green); } #out .cur { display:inline-block; width:8px; height:15px; background:var(--green); vertical-align:-2px; animation:blink 1s steps(2) infinite; }
+  @keyframes blink { 50% { opacity:0; } }
+  #heads { display:flex; gap:6px; flex-wrap:wrap; }
+  .head { text-align:center; font-size:11px; color:var(--dim); cursor:pointer; padding:3px; border:1px solid transparent; border-radius:6px; }
+  .head.sel { border-color:var(--accent); color:var(--text); }
+  .head canvas { margin:0 auto 2px; background:#05070f; }
+  #probs { font:12px ui-monospace, Menlo, Consolas, monospace; }
+  .pr { display:grid; grid-template-columns:76px 1fr 46px; gap:6px; align-items:center; margin:2px 0; }
+  .pr i { display:block; height:11px; background:#3c5bd8; border-radius:2px; }
+  .pr.pick i { background:var(--green); } .pr.pick span:first-child { color:var(--green); }
+  .pr em { font-style:normal; text-align:right; color:var(--dim); }
+  .row { display:flex; align-items:center; gap:8px; font-size:12px; color:var(--dim); }
+  .row input { flex:1; accent-color:var(--accent); }
+  #tip { position:fixed; pointer-events:none; z-index:30; background:#000d; border:1px solid var(--line); border-radius:6px; padding:3px 7px; font-size:12px; display:none; white-space:nowrap; }
+  details { font-size:12px; color:var(--dim); margin-top:6px; } summary { cursor:pointer; }
+  #vocab { margin-top:6px; line-height:2; } #vocab button { padding:0 6px; font-size:12px; margin:0 2px; }
+  .legend { display:inline-block; width:60px; height:9px; vertical-align:middle; border-radius:2px; background:linear-gradient(90deg,var(--cool),#151a30,var(--warm)); }
+  #home { position:fixed; right:12px; bottom:12px; z-index:20; display:inline-flex; align-items:center; gap:6px;
+    padding:7px 12px; background:#1a2552; color:var(--text); border:1px solid var(--line); border-radius:8px;
+    text-decoration:none; font-size:13px; }
+  #home:hover, #home:focus-visible { background:#243272; border-color:#6c86ff; outline:none; }
+</style>
+</head>
+<body>
+<h1>Inside a Tiny LLM</h1>
+<div class="sub">Type a sentence and watch a real (very small) transformer read it and write an answer, one token at a time. Every number you see is computed live in your browser from the trained weights: 2 layers, 4 attention heads, 32 numbers per token, ~100 words of vocabulary.</div>
+
+<div class="bar">
+  <input id="prompt" spellcheck="false" autocomplete="off" value="what is two plus three ?">
+  <button class="primary" id="start">Start</button>
+</div>
+<div id="warn"></div>
+<div class="bar" id="examples"></div>
+
+<div id="steps"></div>
+
+<div class="bar">
+  <button id="back">&#9664; Back</button>
+  <button class="primary" id="next">Next &#9654;</button>
+  <button id="play">&#9654;&#9654; Play</button>
+  <button id="skip" title="Finish this token and start the next one">Next token &#9197;</button>
+  <span class="row" style="margin-left:12px">temperature <input type="range" id="temp" min="0" max="2" step="0.1" value="0" style="width:120px"><b id="tempOut" style="color:var(--text);min-width:50px">0 (greedy)</b></span>
+  <span class="row" style="margin-left:auto"><span class="legend"></span> negative / positive number</span>
+</div>
+
+<div id="main">
+  <div id="stage"><canvas id="cv"></canvas></div>
+  <div id="side">
+    <div class="card"><h2>What is happening</h2><div id="story"></div></div>
+    <div class="card"><h2>Text so far</h2><div id="out"></div></div>
+    <div class="card"><h2 id="headsTitle">Attention heads</h2><div id="heads"></div></div>
+    <div class="card"><h2>Next-token probabilities</h2><div id="probs"></div></div>
+    <div class="card"><h2>What the model knows</h2>
+      <div style="font-size:12px;color:var(--dim)">Only the words it was trained on. Capitals, opposites, animal sounds, colors and adding numbers up to ten. Unknown words are read as <code>&lt;unk&gt;</code>.</div>
+      <details><summary>Show vocabulary (click a word to add it)</summary><div id="vocab"></div></details>
+    </div>
+  </div>
+</div>
+
+<div id="tip"></div>
+<a id="home" href="../index.html" title="Back to all side projects">&#8962; Home</a>
+<script src="model-data.js"></script>
+<script src="engine.js"></script>
+<script>
+(() => {
+  const M = TinyLM.load(MODEL_DATA), cfg = M.cfg, V = M.vocab, D = cfg.d, NH = cfg.heads, HID = cfg.hidden;
+  const EXAMPLES = ["what is two plus three ?", "the capital of japan is", "what is the opposite of happy ?", "what does the cow say ?",
+                    "what color is the grass ?", "seven plus two is", "the opposite of fast is"];
+  const STEPS = [["Tokenize", "words &rarr; IDs"], ["Embed", "ID &rarr; 32 numbers"], ["Attention 1", "look back"], ["MLP 1", "32&rarr;128&rarr;32"],
+                 ["Attention 2", "look back again"], ["MLP 2", "32&rarr;128&rarr;32"], ["Unembed", "scores for each word"], ["Pick", "choose next token"]];
+  const HEAD_COL = ['#ff6b6b', '#ffd84a', '#46ff84', '#5ab0ff'], AVG_COL = '#b8c4ff';
+
+  // ---------------------------------------------------------------- state
+  const st = { promptIds: [], gen: [], stage: 0, picked: null, done: false, head: 'avg', hoverRow: null, timer: null };
+  let tr = null;
+
+  const $ = id => document.getElementById(id);
+  const tokName = id => V[id];
+  const esc = s => s.replace(/&/g, '&amp;').replace(/</g, '&lt;');
+  const ids = () => [0, ...st.promptIds, ...st.gen];
+
+  function tokenize(text) {
+    const words = text.toLowerCase().replace(/([?.,!])/g, ' $1 ').split(/\s+/).filter(Boolean);
+    return words.map(w => (M.idx[w] === undefined ? { w, id: 1 } : { w, id: M.idx[w] }));
+  }
+
+  function start() {
+    stop();
+    const toks = tokenize($('prompt').value);
+    const unk = toks.filter(t => t.id === 1).map(t => t.w);
+    let warn = '';
+    if (unk.length) warn += `Not in vocabulary (read as <unk>): ${unk.join(', ')}. `;
+    if (toks.length > cfg.maxLen - 3) { warn += `Prompt shortened to ${cfg.maxLen - 3} tokens. `; toks.length = cfg.maxLen - 3; }
+    $('warn').textContent = warn;
+    st.promptIds = toks.map(t => t.id); st.gen = []; st.stage = 0; st.picked = null; st.done = false;
+    recompute(); resetAnim(); refresh();
+  }
+
+  function recompute() { tr = TinyLM.run(M, ids()); if (typeof fit === 'function' && cv) fit(); }
+
+  // temperature-adjusted distribution (greedy shows the raw softmax)
+  function dist() {
+    const t = +$('temp').value;
+    return t > 0 ? TinyLM.softmax(tr.logits[tr.T - 1].map(v => v / t)) : tr.probs;
+  }
+  function samplePick() {
+    const p = dist(), t = +$('temp').value;
+    if (t <= 0) return p.indexOf(Math.max(...p));
+    let r = Math.random(), c = 0;
+    for (let i = 0; i < p.length; i++) { c += p[i]; if (r <= c) return i; }
+    return p.length - 1;
+  }
+
+  function setStage(s) {
+    if (st.done && s > 0) s = 0;
+    st.stage = Math.max(0, Math.min(7, s));
+    if (st.stage === 7 && st.picked === null) st.picked = samplePick();
+    refresh();
+  }
+  function commit() {
+    st.gen.push(st.picked); st.picked = null;
+    st.stage = 0;
+    if (V[st.gen[st.gen.length - 1]] === '.' || ids().length >= cfg.maxLen) st.done = true;
+    recompute(); resetAnim();
+  }
+  function next() {
+    if (st.done) return;
+    if (st.stage < 7) setStage(st.stage + 1); else { commit(); refresh(); }
+  }
+  function back() { if (!st.done && st.stage > 0) setStage(st.stage - 1); }
+  function skip() { if (st.done) return; if (st.picked === null) st.picked = samplePick(); commit(); refresh(); }
+  function stop() { if (st.timer) { clearInterval(st.timer); st.timer = null; } $('play').innerHTML = '&#9654;&#9654; Play'; }
+  function togglePlay() {
+    if (st.timer) return stop();
+    if (st.done) return;
+    $('play').innerHTML = '&#10074;&#10074; Pause';
+    st.timer = setInterval(() => { next(); if (st.done) stop(); }, 1100);
+  }
+
+  // ---------------------------------------------------------------- canvas layout
+  const W = 1330, Y0 = 46, RH = 22, CS = 3;
+  let H = 384;
+  const X = { tok: 8, out: 1086 };
+  const STRIP = D * CS; // 96
+  // columns: r0 | attention gap | r1a | MLP neurons | r1b | attention gap | r2a | MLP neurons | r2b
+  const LAY = { r0: 120, a1: 216, r1a: 306, m1: 402, r1b: 530, a2: 626, r2a: 716, m2: 812, r2b: 940 };
+
+  const cv = $('cv'), ctx = cv.getContext('2d');
+  let kScale = 1, anim = new Array(8).fill(0), rafOn = false;
+  function resetAnim() { anim = anim.map((_, i) => (i <= 0 ? 1 : 0)); }
+
+  function fit() {
+    const avail = $('stage').clientWidth - 16;
+    kScale = Math.min(1, avail / W);
+    H = Y0 + (tr ? tr.T + 2 : 8) * RH + 8; // room for the ghost "+ token" row
+    const dpr = window.devicePixelRatio || 1;
+    cv.style.width = W * kScale + 'px'; cv.style.height = H * kScale + 'px';
+    cv.width = Math.round(W * kScale * dpr); cv.height = Math.round(H * kScale * dpr);
+    ctx.setTransform(kScale * dpr, 0, 0, kScale * dpr, 0, 0);
+    draw();
+  }
+
+  const yTop = r => Y0 + r * RH, yMid = r => Y0 + r * RH + RH / 2;
+  function clamp(v, a, b) { return Math.max(a, Math.min(b, v)); }
+  function valColor(v, sc) {
+    const t = Math.tanh(1.4 * v / sc), a = Math.abs(t);
+    const base = [21, 26, 48], hot = t >= 0 ? [255, 154, 60] : [60, 155, 255];
+    return `rgb(${(base[0] + (hot[0] - base[0]) * a) | 0},${(base[1] + (hot[1] - base[1]) * a) | 0},${(base[2] + (hot[2] - base[2]) * a) | 0})`;
+  }
+  const rmsOf = mat => { let s = 0, n = 0; for (const r of mat) for (const v of r) { s += v * v; n++; } return Math.sqrt(s / n) * 2 || 1; };
+  function focusRow() { return st.hoverRow !== null && st.hoverRow < tr.T ? st.hoverRow : tr.T - 1; }
+
+  function strip(mat, x, scale, alpha) {
+    ctx.globalAlpha = alpha;
+    for (let r = 0; r < mat.length; r++) {
+      const y = yTop(r) + 2;
+      for (let i = 0; i < D; i++) { ctx.fillStyle = valColor(mat[r][i], scale); ctx.fillRect(x + i * CS, y, CS, RH - 5); }
+    }
+    ctx.globalAlpha = 1;
+  }
+  function neurons(mat, x, alpha) {
+    let mx = 0; for (const r of mat) for (const v of r) if (v > mx) mx = v;
+    ctx.globalAlpha = alpha;
+    for (let r = 0; r < mat.length; r++) {
+      const y = yTop(r) + 2;
+      for (let j = 0; j < HID; j++) {
+        const v = mat[r][j] / (mx || 1);
+        if (v <= 0) continue;
+        ctx.fillStyle = `rgba(70,255,132,${0.12 + 0.88 * Math.sqrt(v)})`;
+        ctx.fillRect(x + j, y, 1, RH - 5);
+      }
+    }
+    ctx.globalAlpha = 1;
+  }
+  function label(txt, x, y, color, alpha, align) {
+    ctx.globalAlpha = alpha; ctx.fillStyle = color || '#8a90aa'; ctx.textAlign = align || 'left';
+    ctx.fillText(txt, x, y); ctx.globalAlpha = 1;
+  }
+
+  function arcs(L, xs, xe, alpha) {
+    const T = tr.T, f = focusRow();
+    const w = (t, u) => st.head === 'avg' ? L.attn.reduce((s, A) => s + A[t][u], 0) / NH : L.attn[st.head][t][u];
+    const col = st.head === 'avg' ? AVG_COL : HEAD_COL[st.head];
+    ctx.strokeStyle = col; ctx.lineCap = 'round';
+    for (let pass = 0; pass < 2; pass++) {
+      for (let t = 0; t < T; t++) {
+        const isF = t === f; if ((pass === 1) !== isF) continue;
+        for (let u = 0; u <= t; u++) {
+          const a = w(t, u); if (a < (isF ? 0.02 : 0.08)) continue;
+          ctx.globalAlpha = alpha * (isF ? 0.25 + 0.75 * a : 0.07 + 0.12 * a);
+          ctx.lineWidth = isF ? 0.6 + 4.5 * a : 0.5;
+          ctx.beginPath(); ctx.moveTo(xs, yMid(u)); ctx.bezierCurveTo(xs + (xe - xs) * .55, yMid(u), xs + (xe - xs) * .45, yMid(t), xe, yMid(t)); ctx.stroke();
+        }
+      }
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  function draw() {
+    if (!tr) return;
+    ctx.clearRect(0, 0, W, H);
+    ctx.font = '12px ui-monospace, Menlo, Consolas, monospace'; ctx.textBaseline = 'middle';
+    const T = tr.T, f = focusRow(), a = anim;
+    // focus row band
+    ctx.fillStyle = 'rgba(108,134,255,.10)'; ctx.fillRect(0, yTop(f), W, RH);
+    // headers
+    ctx.font = '11px system-ui, sans-serif';
+    label('tokens', X.tok, 14, '#8a90aa', 1);
+    label('embedding', LAY.r0, 14, '#8a90aa', a[1]); label('+ positions', LAY.r0, 28, '#5d6382', a[1]);
+    label('attention 1', LAY.a1 + 4, 14, '#8a90aa', a[2]); label('residual', LAY.r1a, 14, '#8a90aa', a[2]);
+    label('MLP 1: 128 neurons', LAY.m1, 14, '#8a90aa', a[3]); label('residual', LAY.r1b, 14, '#8a90aa', a[3]);
+    label('attention 2', LAY.a2 + 4, 14, '#8a90aa', a[4]); label('residual', LAY.r2a, 14, '#8a90aa', a[4]);
+    label('MLP 2: 128 neurons', LAY.m2, 14, '#8a90aa', a[5]); label('residual', LAY.r2b, 14, '#8a90aa', a[5]);
+    label('best guess for the NEXT word', X.out, 14, '#8a90aa', a[6]);
+    ctx.font = '12px ui-monospace, Menlo, Consolas, monospace';
+
+    // token column
+    for (let r = 0; r < T; r++) {
+      const isGen = r > st.promptIds.length;
+      ctx.fillStyle = r === 0 ? '#5d6382' : isGen ? '#46ff84' : '#e8ecff';
+      ctx.textAlign = 'left'; ctx.fillText(tokName(tr.ids[r]), X.tok, yMid(r));
+      label('#' + tr.ids[r], 104, yMid(r), '#4d5374', 1, 'right');
+    }
+    // strips
+    const L = tr.layers;
+    strip(tr.emb, LAY.r0, rmsOf(tr.emb), a[1]);
+    arcs(L[0], LAY.a1 + 0, LAY.r1a - 0, a[2]); strip(L[0].mid, LAY.r1a, rmsOf(L[0].mid), a[2]);
+    neurons(L[0].hidden, LAY.m1, a[3]); strip(L[0].out, LAY.r1b, rmsOf(L[0].out), a[3]);
+    arcs(L[1], LAY.a2, LAY.r2a, a[4]); strip(L[1].mid, LAY.r2a, rmsOf(L[1].mid), a[4]);
+    neurons(L[1].hidden, LAY.m2, a[5]); strip(L[1].out, LAY.r2b, rmsOf(L[1].out), a[5]);
+    // attention gaps start where the previous strip ends
+    // output column
+    if (a[6] > 0.01) {
+      for (let r = 0; r < T; r++) {
+        const p = TinyLM.softmax(tr.logits[r]); let b = 0; for (let i = 1; i < p.length; i++) if (p[i] > p[b]) b = i;
+        const last = r === T - 1;
+        ctx.globalAlpha = a[6] * (last ? 1 : 0.55);
+        ctx.fillStyle = last ? '#ffd84a' : '#9aa3c8'; ctx.textAlign = 'left';
+        ctx.fillText(`→ ${tokName(b)}`, X.out, yMid(r));
+        ctx.textAlign = 'right'; ctx.fillText(Math.round(p[b] * 100) + '%', X.out + 210, yMid(r));
+        ctx.globalAlpha = 1;
+      }
+    }
+    // picked token ghost
+    if (a[7] > 0.01 && st.picked !== null && T < cfg.maxLen) {
+      const y = yMid(T);
+      ctx.globalAlpha = a[7]; ctx.setLineDash([4, 3]); ctx.strokeStyle = '#46ff84'; ctx.strokeRect(X.tok - 3, yTop(T) + 1, 108, RH - 2); ctx.setLineDash([]);
+      ctx.fillStyle = '#46ff84'; ctx.textAlign = 'left'; ctx.fillText('+ ' + tokName(st.picked), X.tok + 2, y);
+      ctx.strokeStyle = '#46ff84'; ctx.beginPath(); ctx.moveTo(X.out + 160, yMid(T - 1) + 8); ctx.lineTo(X.out + 160, y); ctx.lineTo(X.tok + 110, y); ctx.stroke();
+      label('appended to the input, then the whole network runs again', X.tok + 120, y + 14, '#46ff84', a[7] * .8);
+      ctx.globalAlpha = 1;
+    }
+    if (st.done) label('finished ✓', X.out, yMid(T) + 6, '#46ff84', 1);
+    ctx.textAlign = 'left';
+  }
+
+  function animate() {
+    if (rafOn) return; rafOn = true;
+    const tick = () => {
+      let moving = false;
+      for (let i = 0; i < 8; i++) {
+        const target = i <= st.stage || (st.done && i === 0) ? 1 : 0, d = target - anim[i];
+        if (Math.abs(d) > 0.01) { anim[i] += d * 0.22; moving = true; } else anim[i] = target;
+      }
+      draw();
+      if (moving) requestAnimationFrame(tick); else rafOn = false;
+    };
+    requestAnimationFrame(tick);
+  }
+
+  // ---------------------------------------------------------------- side panel
+  function pct(v) { return Math.round(v * 100) + '%'; }
+  const T_ = s => `<span class="t">${esc(s)}</span>`;
+  function attnFacts(l) {
+    const f = tr.T - 1, L = tr.layers[l];
+    const row = u => st.head === 'avg' ? L.attn.reduce((s, A) => s + A[f][u], 0) / NH : L.attn[st.head][f][u];
+    const order = [...Array(tr.T).keys()].sort((x, y) => row(y) - row(x)).slice(0, 2);
+    const who = st.head === 'avg' ? 'On average the four heads' : `Head ${st.head + 1}`;
+    return `${who}: ${T_(tokName(tr.ids[f]))} looks most at ${order.map(u => `${T_(tokName(tr.ids[u]))} <span class="n">${pct(row(u))}</span>`).join(' and ')}.`;
+  }
+  function story() {
+    const f = tr.T - 1, last = tokName(tr.ids[f]), s = st.stage;
+    if (st.done) return `<b>Finished.</b> The model produced the end-of-sentence token <span class="t">.</span>, so it stops. Press <b>Start</b> to run the prompt again, or try another sentence.`;
+    const next = `Press <b>Next</b> to continue.`;
+    switch (s) {
+      case 0: return `<b>1. Tokenize.</b> Your text is cut into tokens (here: whole words and punctuation). Each token has a fixed ID in a ${cfg.vocab}-word vocabulary. A special ${T_('<bos>')} token ("beginning of sequence") is put in front. The network only ever sees these numbers. ${next}`;
+      case 1: return `<b>2. Embed.</b> Each ID is looked up in a table and becomes a list of <b>${D} numbers</b> (a vector); a second vector for the <i>position</i> is added so the model knows word order. Each coloured square is one number: orange = positive, blue = negative. The network starts with no idea what words mean; training shaped these numbers.`;
+      case 2: case 4: {
+        const l = s === 2 ? 0 : 1;
+        return `<b>${s === 2 ? '3' : '5'}. Attention (layer ${l + 1}).</b> Every token may look back at the tokens before it (never ahead) and copy information from them. Line thickness = how much it looks. There are ${NH} heads, each with its own habit; click a head on the right to see it alone. Hover over a row to see what that token looks at. ${attnFacts(l)} The result is <i>added</i> to the token's vector.`;
+      }
+      case 3: case 5: {
+        const l = s === 3 ? 0 : 1, h = tr.layers[l].hidden[f], on = h.reduce((c, v) => c + (v > 0 ? 1 : 0), 0);
+        return `<b>${s === 3 ? '4' : '6'}. MLP (layer ${l + 1}).</b> Each token's vector is expanded to <b>${HID} neurons</b> (green, only positive values survive: ReLU), then squeezed back to ${D} numbers and <i>added</i> to the vector. This is where facts get recalled. For ${T_(last)}, <span class="n">${on}</span> of ${HID} neurons are active.`;
+      }
+      case 6: {
+        const p = tr.probs, b = p.indexOf(Math.max(...p));
+        return `<b>7. Unembed.</b> The last vector of the last token (${T_(last)}) is compared against every word in the vocabulary, giving ${cfg.vocab} scores, which softmax turns into probabilities. Notice every row makes a prediction (the model is trained to guess each next word), but only the <b>last row</b> matters for writing. Best guess: ${T_(tokName(b))} <span class="n">${pct(p[b])}</span>.`;
+      }
+      default: {
+        const t = +$('temp').value;
+        return `<b>8. Pick.</b> ${t > 0 ? `With temperature <span class="n">${t}</span> the next word is <i>sampled</i> from those probabilities.` : 'Greedy mode: take the most probable token.'} Chosen: ${T_(tokName(st.picked))}. It is appended to the input and the <b>entire</b> network runs again from step 1. That loop is how an LLM writes, one token at a time.`;
+      }
+    }
+  }
+  function out() {
+    const parts = [];
+    for (const id of st.promptIds) parts.push(esc(tokName(id)));
+    let h = parts.join(' ');
+    h += ' <span class="gen">' + esc(st.gen.map(tokName).join(' ')) + '</span>';
+    if (!st.done) h += (st.stage === 7 && st.picked !== null ? ` <span class="gen" style="opacity:.5">${esc(tokName(st.picked))}</span>` : '') + ' <span class="cur"></span>';
+    $('out').innerHTML = h;
+  }
+  function probs() {
+    const box = $('probs');
+    if (st.stage < 6 || st.done) { box.innerHTML = `<span style="color:var(--dim)">${st.done ? 'Done.' : 'Appears after the last layer (step 7).'}</span>`; return; }
+    const p = dist(), top = [...p.keys()].sort((a, b) => p[b] - p[a]).slice(0, 8);
+    box.innerHTML = top.map(i => `<div class="pr ${st.stage === 7 && i === st.picked ? 'pick' : ''}"><span>${esc(tokName(i))}</span><i style="width:${Math.max(1, p[i] * 100)}%"></i><em>${(p[i] * 100).toFixed(p[i] < .1 && p[i] > 0 ? 1 : 0)}%</em></div>`).join('');
+  }
+  function headsPanel() {
+    const l = st.stage >= 4 ? 1 : 0, L = tr.layers[l], T = tr.T, cell = Math.min(10, Math.floor(100 / Math.max(T, 1)));
+    $('headsTitle').textContent = `Attention heads, layer ${l + 1} (rows look at columns)`;
+    const box = $('heads'); box.innerHTML = '';
+    const add = (key, name, getter, color) => {
+      const d = document.createElement('div'); d.className = 'head' + (st.head === key ? ' sel' : '');
+      const c = document.createElement('canvas'); c.width = c.height = cell * T; c.style.width = c.style.height = cell * T + 'px';
+      const g = c.getContext('2d');
+      for (let t = 0; t < T; t++) for (let u = 0; u <= t; u++) {
+        g.fillStyle = color; g.globalAlpha = 0.05 + 0.95 * getter(t, u); g.fillRect(u * cell, t * cell, cell - 1, cell - 1);
+      }
+      g.globalAlpha = 1; g.strokeStyle = '#6c86ff'; g.strokeRect(0.5, focusRow() * cell + 0.5, cell * T - 1, cell - 1);
+      d.append(c, name); d.onclick = () => { st.head = key; refresh(); };
+      box.append(d);
+    };
+    add('avg', 'average', (t, u) => L.attn.reduce((s, A) => s + A[t][u], 0) / NH, AVG_COL);
+    for (let h = 0; h < NH; h++) add(h, 'head ' + (h + 1), (t, u) => L.attn[h][t][u], HEAD_COL[h]);
+  }
+
+  function refresh() {
+    if (!tr) return;
+    $('steps').querySelectorAll('.step').forEach((el, i) => { el.className = 'step' + (i === st.stage ? ' on' : i < st.stage ? ' done' : ''); });
+    $('story').innerHTML = story(); out(); probs(); headsPanel();
+    $('back').disabled = st.done || st.stage === 0; $('next').disabled = st.done; $('skip').disabled = st.done; $('play').disabled = st.done && !st.timer;
+    $('next').innerHTML = st.stage === 7 ? 'Append &amp; repeat &#9654;' : 'Next &#9654;';
+    animate();
+  }
+
+  // ---------------------------------------------------------------- hover / tooltips
+  const tip = $('tip');
+  cv.addEventListener('mousemove', e => {
+    const r = cv.getBoundingClientRect(), x = (e.clientX - r.left) / kScale, y = (e.clientY - r.top) / kScale;
+    const row = Math.floor((y - Y0) / RH), valid = row >= 0 && row < tr.T;
+    const nr = valid ? row : null;
+    if (nr !== st.hoverRow) { st.hoverRow = nr; draw(); headsPanel(); }
+    let txt = '';
+    if (valid) {
+      const L = tr.layers, tok = tokName(tr.ids[row]), strips = [[LAY.r0, tr.emb, 1, 'embedding'], [LAY.r1a, L[0].mid, 2, 'after attention 1'], [LAY.r1b, L[0].out, 3, 'after MLP 1'],
+        [LAY.r2a, L[1].mid, 4, 'after attention 2'], [LAY.r2b, L[1].out, 5, 'after MLP 2']];
+      for (const [sx, mat, need, name] of strips) if (st.stage >= need && x >= sx && x < sx + STRIP) { const i = Math.floor((x - sx) / CS); txt = `"${tok}" · ${name} · number ${i}: ${mat[row][i].toFixed(2)}`; }
+      for (const [sx, l, need] of [[LAY.m1, 0, 3], [LAY.m2, 1, 5]]) if (st.stage >= need && x >= sx && x < sx + HID) { const j = Math.floor(x - sx); txt = `"${tok}" · MLP ${l + 1} neuron ${j}: ${L[l].hidden[row][j].toFixed(2)}`; }
+      for (const [sx, l, need] of [[LAY.a1, 0, 2], [LAY.a2, 1, 4]]) if (st.stage >= need && x >= sx && x < sx + 90) {
+        const A = st.head === 'avg' ? null : L[l].attn[st.head], f = row;
+        const items = [...Array(f + 1).keys()].map(u => [u, A ? A[f][u] : L[l].attn.reduce((s, B) => s + B[f][u], 0) / NH]).sort((a, b) => b[1] - a[1]).slice(0, 3);
+        txt = `"${tok}" attends to: ` + items.map(([u, w]) => `"${tokName(tr.ids[u])}" ${pct(w)}`).join(', ');
+      }
+    }
+    if (txt) { tip.style.display = 'block'; tip.textContent = txt; tip.style.left = Math.min(e.clientX + 14, innerWidth - 20 - tip.offsetWidth) + 'px'; tip.style.top = e.clientY + 14 + 'px'; }
+    else tip.style.display = 'none';
+  });
+  cv.addEventListener('mouseleave', () => { tip.style.display = 'none'; if (st.hoverRow !== null) { st.hoverRow = null; draw(); headsPanel(); } });
+
+  // ---------------------------------------------------------------- wire up
+  STEPS.forEach(([n, s], i) => {
+    const b = document.createElement('button'); b.className = 'step'; b.innerHTML = `<b>${i + 1}. ${n}</b><span>${s}</span>`;
+    b.onclick = () => { stop(); setStage(i); }; $('steps').append(b);
+  });
+  EXAMPLES.forEach(t => { const b = document.createElement('button'); b.className = 'chip'; b.textContent = t; b.onclick = () => { $('prompt').value = t; start(); }; $('examples').append(b); });
+  V.slice(2).forEach(w => { const b = document.createElement('button'); b.textContent = w; b.onclick = () => { const p = $('prompt'); p.value = (p.value.trim() + ' ' + w).trim(); p.focus(); }; $('vocab').append(b); });
+  $('start').onclick = start;
+  $('prompt').addEventListener('keydown', e => { if (e.key === 'Enter') start(); e.stopPropagation(); });
+  $('next').onclick = () => { stop(); next(); }; $('back').onclick = () => { stop(); back(); };
+  $('skip').onclick = () => { stop(); skip(); }; $('play').onclick = togglePlay;
+  $('temp').oninput = () => {
+    const t = +$('temp').value; $('tempOut').textContent = t > 0 ? t.toFixed(1) : '0 (greedy)';
+    if (st.stage === 7) st.picked = samplePick();
+    refresh();
+  };
+  document.addEventListener('keydown', e => {
+    if (e.key === 'ArrowRight') { stop(); next(); } else if (e.key === 'ArrowLeft') { stop(); back(); } else if (e.key === ' ') { e.preventDefault(); togglePlay(); }
+  });
+  window.addEventListener('resize', fit);
+  start();
+  window.__llm = { st, get tr() { return tr; }, next, setStage, start };
+})();
+</script>
+</body>
+</html>

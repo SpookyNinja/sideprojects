@@ -3,12 +3,31 @@
     "name": "Klotski State Space",
     "description": "Build your own sliding-block puzzle and watch its entire state space grow as a 3D network. Zoom in to see each state as a picture.",
     "path": "klotski-state-space/klotski.html",
-    "tags": ["puzzle", "3D", "three.js"]
+    "tags": [
+      "puzzle",
+      "3D",
+      "three.js"
+    ]
   },
   {
     "name": "Three-Body Gravity",
     "description": "Place three glowing bodies in 3D space, give each its own gravity, and watch their orbits unfold with fading trails.",
     "path": "three-body-gravity/threebody.html",
-    "tags": ["physics", "simulation", "3D", "three.js"]
+    "tags": [
+      "physics",
+      "simulation",
+      "3D",
+      "three.js"
+    ]
+  },
+  {
+    "name": "Inside a Tiny LLM",
+    "description": "Watch a small transformer read a sentence and write an answer token by token, with its embeddings, attention and neurons shown live.",
+    "path": "llm-inside/llm-inside.html",
+    "tags": [
+      "AI",
+      "visualization",
+      "transformer"
+    ]
   }
 ]
