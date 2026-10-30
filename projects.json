@@ -28,5 +28,11 @@
     "description": "Watch a small transformer read a sentence and write an answer token by token, with its embeddings, attention and neurons shown live.",
     "path": "llm-inside/llm-inside.html",
     "tags": ["AI", "visualization", "transformer"]
+  },
+  {
+    "name": "Neural Net Playground",
+    "description": "Train a small neural network from scratch in the browser and watch its decision boundary and every neuron's view of the data evolve.",
+    "path": "neural-net-playground/nn.html",
+    "tags": ["AI", "neural network", "visualization"]
   }
 ]
