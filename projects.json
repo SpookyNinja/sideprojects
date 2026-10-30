@@ -28,5 +28,11 @@
     "description": "Watch a small transformer read a sentence and write an answer token by token, with its embeddings, attention and neurons shown live.",
     "path": "llm-inside/llm-inside.html",
     "tags": ["AI", "visualization", "transformer"]
+  },
+  {
+    "name": "Graph & Map Colouring",
+    "description": "Colour a random map or your own graph so no neighbours match, and watch a backtracking solver try, clash and back up.",
+    "path": "graph-coloring/coloring.html",
+    "tags": ["algorithms", "graphs", "canvas"]
   }
 ]
