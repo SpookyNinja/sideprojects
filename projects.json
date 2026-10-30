@@ -76,5 +76,11 @@
     "description": "Train a small neural network from scratch in the browser and watch its decision boundary and every neuron's view of the data evolve.",
     "path": "neural-net-playground/nn.html",
     "tags": ["AI", "neural network", "visualization"]
+  },
+  {
+    "name": "Clustering Step by Step",
+    "description": "Place points and step through k-means and DBSCAN one move at a time, with explanations for every step.",
+    "path": "clustering-steps/clustering.html",
+    "tags": ["AI", "clustering", "canvas"]
   }
 ]
