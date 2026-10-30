@@ -30,6 +30,18 @@
     "tags": ["AI", "visualization", "transformer"]
   },
   {
+    "name": "Mandelbrot & Julia Explorer",
+    "description": "Zoom into the Mandelbrot set on the GPU and watch the matching Julia set change as you move over it.",
+    "path": "mandelbrot-julia/fractal.html",
+    "tags": ["math", "fractal", "WebGL"]
+  },
+  {
+    "name": "Chaos Game & IFS Ferns",
+    "description": "Random jumps towards corners or random affine maps build the Sierpinski triangle, Barnsley fern and other fractals from millions of points.",
+    "path": "chaos-game/chaos.html",
+    "tags": ["math", "fractal", "canvas"]
+  },
+  {
     "name": "Graph & Map Colouring",
     "description": "Colour a random map or your own graph so no neighbours match, and watch a backtracking solver try, clash and back up.",
     "path": "graph-coloring/coloring.html",
