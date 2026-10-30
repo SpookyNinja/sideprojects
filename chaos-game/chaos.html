@@ -1,0 +1,363 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Chaos Game &amp; IFS Ferns</title>
+<style>
+  :root { --panel:#0c0e18; --line:rgba(255,255,255,.12); --text:#d8dcee; --dim:#8a90aa; --accent:#7dffb0; }
+  * { box-sizing:border-box; }
+  html, body { margin:0; height:100%; background:#030409; color:var(--text); font:13px/1.4 system-ui, "Segoe UI", sans-serif; overflow:hidden; }
+  body { display:flex; }
+  #panel { width:290px; flex:none; height:100%; overflow-y:auto; padding:12px; background:var(--panel); border-right:1px solid var(--line); }
+  #stage { position:relative; flex:1; min-width:0; }
+  canvas { position:absolute; inset:0; width:100%; height:100%; display:block; }
+  #overlay { touch-action:none; }
+  h1 { font-size:16px; margin:0 0 2px; letter-spacing:.04em; }
+  h3 { font-size:11px; margin:14px 0 6px; color:var(--dim); text-transform:uppercase; letter-spacing:.08em; }
+  .sub { color:var(--dim); font-size:12px; margin-bottom:10px; }
+  .row { display:flex; gap:6px; margin-bottom:8px; flex-wrap:wrap; align-items:center; }
+  .row button { flex:1; }
+  button, select { background:#1b2038; color:var(--text); border:1px solid var(--line); border-radius:7px; padding:6px 10px; font:inherit; cursor:pointer; }
+  button:hover { background:#272e52; }
+  button.primary { background:#1d7a45; border-color:#2fb869; color:#fff; font-weight:600; }
+  button.active { background:#2e4bd6; border-color:#4a66f0; color:#fff; }
+  select { width:100%; padding:5px; background:#0b0e1c; }
+  input[type=range] { width:100%; accent-color:var(--accent); margin:0; }
+  label.f { display:flex; justify-content:space-between; font-size:12px; margin-top:6px; color:var(--dim); }
+  label.f output { color:var(--text); font-variant-numeric:tabular-nums; }
+  .check { display:flex; align-items:center; gap:6px; font-size:12px; margin-top:6px; cursor:pointer; }
+  .note { color:var(--dim); font-size:12px; margin:4px 0; }
+  .tabs { display:flex; gap:4px; } .tabs button { flex:1; }
+  #maps { font:11px ui-monospace, Consolas, monospace; color:var(--dim); white-space:pre; overflow-x:auto; background:#0b0e1c; border:1px solid var(--line); border-radius:6px; padding:6px; }
+  #hud { position:absolute; left:12px; bottom:12px; color:var(--dim); font-size:12px; pointer-events:none; text-shadow:0 0 4px #000; }
+  #hud b { color:var(--text); font-variant-numeric:tabular-nums; }
+  #home { position:fixed; right:12px; bottom:12px; z-index:20; display:inline-flex; align-items:center; gap:6px;
+    padding:7px 12px; background:#1a2552; color:var(--text); border:1px solid var(--line); border-radius:8px;
+    text-decoration:none; font-size:13px; }
+  #home:hover, #home:focus-visible { background:#243272; border-color:#6c86ff; outline:none; }
+  @media (max-width:760px) {
+    body { flex-direction:column-reverse; }
+    #panel { width:100%; height:44%; border-right:0; border-top:1px solid var(--line); }
+    #stage { flex:1; }
+  }
+</style>
+</head>
+<body>
+<div id="panel">
+  <h1>CHAOS GAME</h1>
+  <div class="sub">Jump a point at random, again and again. Order appears out of pure chance.</div>
+
+  <div class="tabs"><button id="tabPoly" class="active">Polygon game</button><button id="tabIfs">IFS fractals</button></div>
+
+  <div id="polyUI">
+    <h3>Corners</h3>
+    <label class="f">Number of corners <output id="nOut"></output></label>
+    <input type="range" id="n" min="3" max="10" step="1" value="3">
+    <label class="check"><input type="checkbox" id="center"> also jump towards the centre</label>
+    <label class="check"><input type="checkbox" id="mids"> also jump towards edge midpoints</label>
+    <label class="f">Jump fraction <output id="rOut"></output></label>
+    <input type="range" id="r" min="0.2" max="0.8" step="0.005" value="0.5">
+    <div class="row" style="margin-top:6px"><button id="optimal" title="Fraction where the copies just touch">Use "just touching" fraction</button></div>
+    <h3>Rule for the next corner</h3>
+    <select id="rule">
+      <option value="any">Any corner</option>
+      <option value="norepeat">Not the same corner twice</option>
+      <option value="noneighbour">Not a neighbour of the last one</option>
+      <option value="noplus1">Not one step clockwise of the last</option>
+      <option value="noplus2">Not two steps clockwise of the last</option>
+      <option value="noprev2">Not the same as two jumps ago</option>
+    </select>
+    <div class="note">Drag the corner dots to reshape. Rules change square chaos into fractals.</div>
+  </div>
+
+  <div id="ifsUI" hidden>
+    <h3>Preset</h3>
+    <select id="ifs"></select>
+    <label class="check"><input type="checkbox" id="mutate"> slowly morph the maps</label>
+    <h3>Affine maps (a b c d e f p)</h3>
+    <div id="maps"></div>
+  </div>
+
+  <h3>Run</h3>
+  <div class="row"><button class="primary" id="run">&#10074;&#10074; Pause</button><button id="clear">Clear</button></div>
+  <label class="f">Points per frame <output id="speedOut"></output></label>
+  <input type="range" id="speed" min="0" max="5.3" step="0.1" value="3.7">
+  <label class="check"><input type="checkbox" id="trace"> show the first jumps step by step</label>
+
+  <h3>Colour</h3>
+  <select id="colour">
+    <option value="corner">by corner / map chosen</option>
+    <option value="density">by density (heat)</option>
+    <option value="white">white glow</option>
+  </select>
+  <label class="f">Exposure <output id="expOut"></output></label>
+  <input type="range" id="exp" min="0.2" max="3" step="0.05" value="1">
+  <div class="row" style="margin-top:8px"><button id="save">Save PNG</button></div>
+</div>
+
+<div id="stage">
+  <canvas id="cv"></canvas>
+  <canvas id="overlay"></canvas>
+  <div id="hud"></div>
+</div>
+
+<a id="home" href="../index.html" title="Back to all side projects">&#8962; Home</a>
+
+<script>
+(() => {
+const $ = id => document.getElementById(id);
+const cv = $('cv'), ctx = cv.getContext('2d'), ov = $('overlay'), octx = ov.getContext('2d');
+
+// ---------- IFS presets: [a, b, c, d, e, f, p] with x' = a x + b y + e, y' = c x + d y + f ----------
+const IFS = {
+  'Barnsley fern': { maps: [[0,0,0,0.16,0,0,.01],[0.85,0.04,-0.04,0.85,0,1.6,.85],[0.2,-0.26,0.23,0.22,0,1.6,.07],[-0.15,0.28,0.26,0.24,0,0.44,.07]] },
+  'Sierpinski triangle': { maps: [[.5,0,0,.5,0,0,1/3],[.5,0,0,.5,.5,0,1/3],[.5,0,0,.5,.25,.433,1/3]] },
+  'Maple leaf': { maps: [[.14,.01,0,.51,-.08,-1.31,.1],[.43,.52,-.45,.5,1.49,-.75,.35],[.45,-.49,.47,.47,-1.62,-.74,.35],[.49,0,0,.51,.02,1.62,.2]] },
+  'Heighway dragon': { maps: [[.5,-.5,.5,.5,0,0,.5],[-.5,-.5,.5,-.5,1,0,.5]] },
+  'Lévy C curve': { maps: [[.5,-.5,.5,.5,0,0,.5],[.5,.5,-.5,.5,.5,.5,.5]] },
+  'Spiral': { maps: [[.787879,-.424242,.242424,.859848,1.758647,1.408065,.9],[-.121212,.257576,.151515,.05303,-6.721654,1.377236,.05],[.181818,-.136364,.090909,.181818,6.086107,1.568035,.05]] },
+  'Tree': { maps: [[0,0,0,.5,0,0,.05],[.42,-.42,.42,.42,0,.2,.4],[.42,.42,-.42,.42,0,.2,.4],[.1,0,0,.1,0,.2,.15]] },
+  'Crystal': { maps: [[.255,0,0,.255,.3726,.6714,.25],[.255,0,0,.255,.1146,.2232,.25],[.255,0,0,.255,.6306,.2232,.25],[.37,-.642,.642,.37,.6356,-.0061,.25]] },
+  'Koch snowflake arm': { maps: [[1/3,0,0,1/3,0,0,.25],[1/6,-.288675,.288675,1/6,1/3,0,.25],[1/6,.288675,-.288675,1/6,.5,.288675,.25],[1/3,0,0,1/3,2/3,0,.25]] },
+};
+const HUES = [140, 35, 200, 300, 0, 60, 260, 180, 320, 90, 20, 230];
+
+// ---------- state ----------
+let mode = 'poly', running = true;
+let W = 0, H = 0, dpr = 1;
+let dens, hueSumX, hueSumY;  // per-pixel hit counts and colour accumulators
+let maxD = 1, total = 0;
+let verts = [];       // polygon corners in pixel coords (CSS px)
+let px = 0, py = 0, last = -1, last2 = -1;
+let ifs = null, ifsBase = null, ifsView = null, mutT = 0;
+let traceSteps = [];  // recent jumps for the "step by step" overlay
+
+function resize() {
+  dpr = Math.min(window.devicePixelRatio || 1, 2);
+  const r = cv.getBoundingClientRect();
+  const nw = Math.round(r.width * dpr), nh = Math.round(r.height * dpr);
+  if (nw === W && nh === H) return;
+  const oldW = W, oldH = H; W = nw; H = nh;
+  for (const c of [cv, ov]) { c.width = W; c.height = H; }
+  if (mode === 'poly') { oldW ? verts = verts.map(([x, y]) => [x * W / oldW, y * H / oldH]) : makePolygon(); }
+  else fitIfs();
+  clear();
+}
+
+function clear() {
+  dens = new Float32Array(W * H); hueSumX = new Float32Array(W * H); hueSumY = new Float32Array(W * H);
+  maxD = 1; total = 0; traceSteps = [];
+  px = W / 2; py = H / 2; last = last2 = -1;
+  img = ctx.createImageData(W, H);
+}
+let img;
+
+function makePolygon() {
+  const n = +$('n').value, w = W / dpr, h = H / dpr, cx = w / 2, cy = h / 2 + h * 0.03, R = Math.min(w, h) * 0.44;
+  verts = [];
+  for (let i = 0; i < n; i++) { const a = -Math.PI / 2 + i * 2 * Math.PI / n; verts.push([cx + R * Math.cos(a), cy + R * Math.sin(a)]); }
+}
+// Fraction at which the n scaled copies of a regular n-gon just touch.
+function touching(n) {
+  let s = 0; for (let k = 1; k <= Math.floor(n / 4); k++) s += Math.cos(2 * Math.PI * k / n);
+  return 1 - 1 / (2 * (1 + s));
+}
+
+function targets() {
+  const t = verts.map(v => v.slice());
+  if ($('mids').checked) for (let i = 0; i < verts.length; i++) { const a = verts[i], b = verts[(i + 1) % verts.length]; t.push([(a[0] + b[0]) / 2, (a[1] + b[1]) / 2]); }
+  if ($('center').checked) t.push([verts.reduce((s, v) => s + v[0], 0) / verts.length, verts.reduce((s, v) => s + v[1], 0) / verts.length]);
+  return t;
+}
+
+function pickCorner(n, nc) {
+  const rule = $('rule').value;
+  for (let tries = 0; tries < 50; tries++) {
+    const k = (Math.random() * n) | 0;
+    if (last < 0 || k >= nc || last >= nc) return k;
+    if (rule === 'norepeat' && k === last) continue;
+    if (rule === 'noneighbour' && nc > 3 && (k === (last + 1) % nc || k === (last + nc - 1) % nc)) continue;
+    if (rule === 'noplus1' && k === (last + 1) % nc) continue;
+    if (rule === 'noplus2' && k === (last + 2) % nc) continue;
+    if (rule === 'noprev2' && k === last2) continue;
+    return k;
+  }
+  return (Math.random() * n) | 0;
+}
+
+function plot(x, y, hue) {
+  const ix = x | 0, iy = y | 0;
+  if (ix < 0 || iy < 0 || ix >= W || iy >= H) return;
+  const i = iy * W + ix, d = ++dens[i];
+  const a = hue * Math.PI / 180; hueSumX[i] += Math.cos(a); hueSumY[i] += Math.sin(a);
+  if (d > maxD) maxD = d;
+}
+
+function stepPoly(count) {
+  const t = targets(), r = +$('r').value, nc = verts.length;
+  const sx = dpr;
+  for (let s = 0; s < count; s++) {
+    const k = pickCorner(t.length, nc);
+    const nx = px + (t[k][0] * sx - px) * r, ny = py + (t[k][1] * sx - py) * r;
+    if ($('trace').checked && total < 40) traceSteps.push([px, py, nx, ny, k]);
+    px = nx; py = ny; last2 = last; last = k; total++;
+    if (total > 20) plot(px, py, HUES[k % HUES.length]);
+  }
+}
+
+function fitIfs() {
+  // sample the attractor to find its bounding box
+  let x = 0, y = 0, minX = 1e9, minY = 1e9, maxX = -1e9, maxY = -1e9;
+  for (let i = 0; i < 20000; i++) {
+    const m = chooseMap(); const nx = m[0] * x + m[1] * y + m[4]; y = m[2] * x + m[3] * y + m[5]; x = nx;
+    if (i > 50) { minX = Math.min(minX, x); maxX = Math.max(maxX, x); minY = Math.min(minY, y); maxY = Math.max(maxY, y); }
+  }
+  const s = Math.min(W / (maxX - minX), H / (maxY - minY)) * 0.9;
+  ifsView = { s, ox: W / 2 - (minX + maxX) / 2 * s, oy: H / 2 + (minY + maxY) / 2 * s };
+  px = 0; py = 0;
+}
+function chooseMap() {
+  let r = Math.random(), m = ifs[0];
+  for (const mm of ifs) { r -= mm[6]; if (r <= 0) return mm; m = mm; }
+  return m;
+}
+function stepIfs(count) {
+  const v = ifsView;
+  for (let s = 0; s < count; s++) {
+    let r = Math.random(), k = 0;
+    for (; k < ifs.length - 1; k++) { r -= ifs[k][6]; if (r <= 0) break; }
+    const m = ifs[k];
+    const nx = m[0] * px + m[1] * py + m[4]; py = m[2] * px + m[3] * py + m[5]; px = nx;
+    total++;
+    if (total > 20) plot(v.ox + px * v.s, v.oy - py * v.s, HUES[k % HUES.length]);
+  }
+}
+
+function setIfs(name) {
+  ifsBase = IFS[name].maps.map(m => m.slice());
+  ifs = ifsBase.map(m => m.slice());
+  showMaps(); fitIfs(); clear();
+}
+function showMaps() {
+  $('maps').textContent = ifs.map(m => m.map((v, i) => (i === 6 ? v.toFixed(2) : (v >= 0 ? ' ' : '') + v.toFixed(2))).join(' ')).join('\n');
+}
+
+// ---------- render ----------
+function render() {
+  const data = img.data, mode = $('colour').value, ex = +$('exp').value;
+  const lm = Math.log(1 + maxD);
+  for (let i = 0, j = 0; i < dens.length; i++, j += 4) {
+    const d = dens[i];
+    if (!d) { data[j] = data[j + 1] = data[j + 2] = 0; data[j + 3] = 255; continue; }
+    let v = Math.min(1, Math.pow(Math.log(1 + d) / lm, 1 / (ex * 1.6)) * 1.05);
+    let r, g, b;
+    if (mode === 'white') { r = 200 * v + 55 * v * v; g = 210 * v + 45 * v * v; b = 255 * v; }
+    else if (mode === 'density') { r = 255 * Math.min(1, v * 1.6); g = 255 * Math.max(0, Math.min(1, v * 1.6 - .5)); b = 255 * Math.max(0, v * 2 - 1.2) + 60 * v; }
+    else {
+      const h = Math.atan2(hueSumY[i], hueSumX[i]) * 180 / Math.PI;
+      [r, g, b] = hsl(h, 0.85, 0.12 + 0.55 * v);
+    }
+    data[j] = r; data[j + 1] = g; data[j + 2] = b; data[j + 3] = 255;
+  }
+  ctx.putImageData(img, 0, 0);
+}
+function hsl(h, s, l) {
+  h = ((h % 360) + 360) % 360 / 60;
+  const c = (1 - Math.abs(2 * l - 1)) * s, x = c * (1 - Math.abs(h % 2 - 1)), m = l - c / 2;
+  const [r, g, b] = h < 1 ? [c, x, 0] : h < 2 ? [x, c, 0] : h < 3 ? [0, c, x] : h < 4 ? [0, x, c] : h < 5 ? [x, 0, c] : [c, 0, x];
+  return [(r + m) * 255, (g + m) * 255, (b + m) * 255];
+}
+
+function drawOverlay() {
+  octx.clearRect(0, 0, W, H);
+  if (mode !== 'poly') return;
+  const t = targets();
+  octx.lineWidth = dpr;
+  octx.strokeStyle = 'rgba(255,255,255,.18)';
+  octx.beginPath(); verts.forEach(([x, y], i) => i ? octx.lineTo(x * dpr, y * dpr) : octx.moveTo(x * dpr, y * dpr)); octx.closePath(); octx.stroke();
+  t.forEach(([x, y], i) => {
+    octx.fillStyle = `hsl(${HUES[i % HUES.length]} 90% 60%)`;
+    octx.beginPath(); octx.arc(x * dpr, y * dpr, (i < verts.length ? 7 : 4) * dpr, 0, 7); octx.fill();
+    if (i < verts.length) { octx.strokeStyle = '#fff'; octx.stroke(); }
+  });
+  if ($('trace').checked) {
+    traceSteps.forEach(([x0, y0, x1, y1, k], i) => {
+      const a = 0.25 + 0.75 * (i + 1) / traceSteps.length;
+      octx.strokeStyle = `hsla(${HUES[k % HUES.length]} 90% 70% / ${a})`;
+      octx.setLineDash([4 * dpr, 4 * dpr]);
+      const [tx, ty] = t[k];
+      octx.beginPath(); octx.moveTo(x0, y0); octx.lineTo(tx * dpr, ty * dpr); octx.stroke();
+      octx.setLineDash([]);
+      octx.fillStyle = `rgba(255,255,255,${a})`; octx.beginPath(); octx.arc(x1, y1, 3 * dpr, 0, 7); octx.fill();
+    });
+  }
+}
+
+// ---------- loop ----------
+let acc = 0;
+function frame() {
+  if (running) {
+    let n = Math.round(Math.pow(10, +$('speed').value));
+    if ($('trace').checked && total < 40) { acc += 0.05; n = acc >= 1 ? (acc = 0, 1) : 0; }
+    if (mode === 'ifs' && $('mutate').checked) {
+      mutT += 0.01;
+      ifs = ifsBase.map((m, k) => m.map((v, i) => i < 6 ? v * (1 + 0.06 * Math.sin(mutT * (0.7 + k * 0.31) + i * 1.7)) : v));
+      showMaps();
+      // fade the old picture so the morph stays visible
+      for (let i = 0; i < dens.length; i++) if (dens[i]) { dens[i] *= 0.9; hueSumX[i] *= 0.9; hueSumY[i] *= 0.9; }
+      maxD *= 0.9; n = Math.max(n, 60000);
+    }
+    mode === 'poly' ? stepPoly(n) : stepIfs(n);
+  }
+  render(); drawOverlay();
+  $('hud').innerHTML = `points <b>${total.toLocaleString()}</b>`;
+  requestAnimationFrame(frame);
+}
+
+// ---------- UI ----------
+function syncOut() {
+  $('nOut').textContent = $('n').value; $('rOut').textContent = (+$('r').value).toFixed(3);
+  $('speedOut').textContent = Math.round(Math.pow(10, +$('speed').value)).toLocaleString();
+  $('expOut').textContent = (+$('exp').value).toFixed(2);
+}
+function setMode(m) {
+  mode = m; $('tabPoly').classList.toggle('active', m === 'poly'); $('tabIfs').classList.toggle('active', m === 'ifs');
+  $('polyUI').hidden = m !== 'poly'; $('ifsUI').hidden = m !== 'ifs';
+  if (m === 'ifs') setIfs($('ifs').value); else { makePolygon(); clear(); }
+}
+$('tabPoly').onclick = () => setMode('poly');
+$('tabIfs').onclick = () => setMode('ifs');
+for (const name in IFS) { const o = document.createElement('option'); o.textContent = name; $('ifs').appendChild(o); }
+$('ifs').onchange = () => setIfs($('ifs').value);
+$('mutate').onchange = () => { if (!$('mutate').checked) { ifs = ifsBase.map(m => m.slice()); showMaps(); clear(); } };
+$('n').oninput = () => { syncOut(); $('r').value = $('n').value == 3 ? 0.5 : touching(+$('n').value).toFixed(3); syncOut(); makePolygon(); clear(); };
+for (const id of ['r', 'rule', 'center', 'mids']) $(id).addEventListener('input', () => { syncOut(); clear(); });
+$('optimal').onclick = () => { $('r').value = touching(+$('n').value); syncOut(); clear(); };
+$('speed').oninput = $('exp').oninput = syncOut;
+$('trace').onchange = () => clear();
+$('run').onclick = () => { running = !running; $('run').innerHTML = running ? '&#10074;&#10074; Pause' : '&#9654; Run'; };
+$('clear').onclick = clear;
+$('save').onclick = () => { const a = document.createElement('a'); a.download = 'chaos-game.png'; a.href = cv.toDataURL('image/png'); a.click(); };
+
+// dragging corners
+let dragIdx = -1;
+ov.addEventListener('pointerdown', e => {
+  if (mode !== 'poly') return;
+  const r = ov.getBoundingClientRect(), x = e.clientX - r.left, y = e.clientY - r.top;
+  dragIdx = verts.findIndex(([vx, vy]) => Math.hypot(vx - x, vy - y) < 16);
+  if (dragIdx >= 0) ov.setPointerCapture(e.pointerId);
+});
+ov.addEventListener('pointermove', e => {
+  const r = ov.getBoundingClientRect(), x = e.clientX - r.left, y = e.clientY - r.top;
+  if (dragIdx >= 0) { verts[dragIdx] = [x, y]; clear(); }
+  else ov.style.cursor = mode === 'poly' && verts.some(([vx, vy]) => Math.hypot(vx - x, vy - y) < 16) ? 'grab' : 'default';
+});
+ov.addEventListener('pointerup', () => dragIdx = -1);
+window.addEventListener('resize', resize);
+
+syncOut(); resize(); frame();
+})();
+</script>
+</body>
+</html>
