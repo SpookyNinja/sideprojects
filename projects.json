@@ -58,5 +58,11 @@
     "description": "Generate mazes with DFS, Prim, Wilson or Kruskal, then race BFS, Dijkstra, A* and greedy search through them with heat-map trails.",
     "path": "maze-pathfinder/maze.html",
     "tags": ["algorithms", "pathfinding", "canvas"]
+  },
+  {
+    "name": "Graph & Map Colouring",
+    "description": "Colour a random map or your own graph so no neighbours match, and watch a backtracking solver try, clash and back up.",
+    "path": "graph-coloring/coloring.html",
+    "tags": ["algorithms", "graphs", "canvas"]
   }
 ]
