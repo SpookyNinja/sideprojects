@@ -28,5 +28,11 @@
     "description": "Watch a small transformer read a sentence and write an answer token by token, with its embeddings, attention and neurons shown live.",
     "path": "llm-inside/llm-inside.html",
     "tags": ["AI", "visualization", "transformer"]
+  },
+  {
+    "name": "Sorting Algorithm Theatre",
+    "description": "Twelve sorting algorithms race side by side on the same data as bars, colour wheels or sound, with live counts of compares and writes.",
+    "path": "sorting-theatre/sorting.html",
+    "tags": ["algorithms", "sorting", "canvas"]
   }
 ]
