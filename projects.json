@@ -28,5 +28,11 @@
     "description": "Watch a small transformer read a sentence and write an answer token by token, with its embeddings, attention and neurons shown live.",
     "path": "llm-inside/llm-inside.html",
     "tags": ["AI", "visualization", "transformer"]
+  },
+  {
+    "name": "Maze Generator & Pathfinder Race",
+    "description": "Generate mazes with DFS, Prim, Wilson or Kruskal, then race BFS, Dijkstra, A* and greedy search through them with heat-map trails.",
+    "path": "maze-pathfinder/maze.html",
+    "tags": ["algorithms", "pathfinding", "canvas"]
   }
 ]
