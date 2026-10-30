@@ -33,6 +33,10 @@
   .check { display:flex; align-items:center; gap:6px; font-size:12px; margin-top:6px; cursor:pointer; }
   #hud { position:fixed; left:342px; bottom:14px; color:var(--dim); font-size:12px; pointer-events:none; text-shadow:0 0 4px #000; }
   #hud b { color:var(--text); font-variant-numeric:tabular-nums; }
+  #home { position:fixed; right:12px; bottom:12px; z-index:20; display:inline-flex; align-items:center; gap:6px;
+    padding:7px 12px; background:#1a2552; color:var(--text); border:1px solid var(--line); border-radius:8px;
+    text-decoration:none; font-size:13px; }
+  #home:hover, #home:focus-visible { background:#243272; border-color:#6c86ff; outline:none; }
   @media (max-width:700px) {
     #panel { right:12px; width:auto; bottom:auto; max-height:55vh; }
     #hud { left:14px; }
@@ -79,6 +83,7 @@
 
 <div id="hud">t = <b id="tOut">0.00</b> · <span id="stateOut">setup — drag the bodies, rotate with the mouse</span></div>
 
+<a id="home" href="../index.html" title="Back to all side projects">&#8962; Home</a>
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
 <script>

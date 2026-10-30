@@ -27,6 +27,7 @@ A single-file web app (`threebody.html`, no build step) that simulates the class
 - Options: cancel total momentum at reset (default on, stops the system drifting away), camera follows centre of mass (default off).
 - Trails: one point every 0.02 simulated time units (frame-rate independent), additive line with brightness fading to the tail.
 - Editing any input while running or paused resets the simulation to the new initial conditions.
+- **Home button** fixed at the bottom right (`#home`, links to `../index.html`), as the repo convention requires.
 - Orbit camera (rotate, zoom, pan) with damping; dim reference grid at y = −6 for depth.
 
 ## Code map
