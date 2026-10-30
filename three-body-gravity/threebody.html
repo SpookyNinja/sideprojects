@@ -1,0 +1,500 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Three-Body Gravity</title>
+<style>
+  :root { --yellow:#ffd84a; --red:#ff4d4d; --green:#46ff84; --panel:rgba(12,14,24,.82); --line:rgba(255,255,255,.12); --text:#d8dcee; --dim:#8a90aa; }
+  * { box-sizing: border-box; }
+  html, body { margin:0; height:100%; background:#02030a; color:var(--text); font:13px/1.4 system-ui, "Segoe UI", sans-serif; overflow:hidden; }
+  #view { position:fixed; inset:0; display:block; }
+  #panel { position:fixed; top:12px; left:12px; bottom:12px; width:318px; overflow-y:auto; padding:12px; background:var(--panel); border:1px solid var(--line); border-radius:12px; backdrop-filter:blur(8px); }
+  #panel.collapsed { display:none; }
+  #toggle { position:fixed; top:12px; right:12px; z-index:5; background:var(--panel); color:var(--text); border:1px solid var(--line); border-radius:8px; padding:6px 10px; cursor:pointer; }
+  h1 { font-size:16px; margin:0 0 2px; letter-spacing:.04em; }
+  .sub { color:var(--dim); font-size:12px; margin-bottom:10px; }
+  .row { display:flex; gap:6px; margin-bottom:8px; flex-wrap:wrap; }
+  button { background:#1b2038; color:var(--text); border:1px solid var(--line); border-radius:7px; padding:6px 10px; cursor:pointer; font:inherit; }
+  button:hover { background:#272e52; }
+  button.primary { background:#2e4bd6; border-color:#4a66f0; color:#fff; flex:1; font-weight:600; }
+  button.primary:hover { background:#3b5af0; }
+  .card { border:1px solid var(--line); border-left:4px solid var(--c); border-radius:9px; padding:8px 9px 6px; margin-bottom:9px; background:rgba(255,255,255,.025); }
+  .card h2 { font-size:13px; margin:0 0 6px; color:var(--c); display:flex; justify-content:space-between; }
+  .card h2 span { color:var(--dim); font-weight:400; }
+  .grid3 { display:grid; grid-template-columns:repeat(3,1fr); gap:5px; margin-bottom:6px; }
+  label.f { display:block; font-size:11px; color:var(--dim); }
+  input[type=number] { width:100%; background:#0b0e1c; color:var(--text); border:1px solid var(--line); border-radius:5px; padding:3px 4px; font:inherit; }
+  input[type=range] { width:100%; accent-color:var(--c, #6c86ff); margin:0; }
+  .mass { display:flex; align-items:center; gap:8px; margin-bottom:6px; }
+  .mass label { font-size:11px; color:var(--dim); white-space:nowrap; }
+  .mass output { min-width:34px; text-align:right; font-variant-numeric:tabular-nums; }
+  .glob label { display:flex; justify-content:space-between; font-size:12px; margin-top:6px; }
+  .check { display:flex; align-items:center; gap:6px; font-size:12px; margin-top:6px; cursor:pointer; }
+  #hud { position:fixed; left:342px; bottom:14px; color:var(--dim); font-size:12px; pointer-events:none; text-shadow:0 0 4px #000; }
+  #hud b { color:var(--text); font-variant-numeric:tabular-nums; }
+  @media (max-width:700px) {
+    #panel { right:12px; width:auto; bottom:auto; max-height:55vh; }
+    #hud { left:14px; }
+  }
+</style>
+</head>
+<body>
+<canvas id="view"></canvas>
+<button id="toggle">Hide panel</button>
+
+<div id="panel">
+  <h1>THREE-BODY GRAVITY</h1>
+  <div class="sub">Set up three bodies, then let gravity do the rest.</div>
+
+  <div class="row">
+    <button class="primary" id="run">▶ Start</button>
+    <button id="reset">Reset</button>
+    <button id="random">Randomize</button>
+  </div>
+  <div class="row">
+    <select id="preset" style="flex:1;background:#0b0e1c;color:var(--text);border:1px solid var(--line);border-radius:6px;padding:5px;">
+      <option value="">Presets…</option>
+      <option value="figure8">Figure-eight (stable)</option>
+      <option value="lagrange">Lagrange triangle (stable)</option>
+      <option value="chaos">Chaotic dance</option>
+      <option value="sun">Heavy sun, two planets</option>
+      <option value="slingshot">Slingshot</option>
+    </select>
+  </div>
+
+  <div id="cards"></div>
+
+  <div class="glob">
+    <label>Gravitational constant G <output id="gOut"></output></label>
+    <input type="range" id="G" min="0.2" max="5" step="0.1" value="1">
+    <label>Simulation speed <output id="speedOut"></output></label>
+    <input type="range" id="speed" min="0.1" max="5" step="0.1" value="1">
+    <label>Trail length <output id="trailOut"></output></label>
+    <input type="range" id="trail" min="10" max="600" step="10" value="120">
+    <label class="check"><input type="checkbox" id="zeroMom" checked> Cancel total momentum (no drift)</label>
+    <label class="check"><input type="checkbox" id="follow"> Camera follows centre of mass</label>
+  </div>
+</div>
+
+<div id="hud">t = <b id="tOut">0.00</b> · <span id="stateOut">setup — drag the bodies, rotate with the mouse</span></div>
+
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+<script>
+(function () {
+  'use strict';
+
+  // ---------- configuration ----------
+  var COLORS = [0xffd84a, 0xff3b3b, 0x3dff7a];
+  var NAMES = ['Yellow', 'Red', 'Green'];
+  var CSS = ['#ffd84a', '#ff4d4d', '#46ff84'];
+  var SOFTENING = 0.05;
+  var MAX_TRAIL = 600;
+  var TRAIL_DT = 0.02, trailAcc = 0; // a trail point every 0.02 simulated time units
+  var H_MAX = 0.004, H_MIN = 0.00002, MAX_STEPS_PER_FRAME = 4000;
+
+  // ---------- three.js scene ----------
+  var canvas = document.getElementById('view');
+  var renderer = new THREE.WebGLRenderer({ canvas: canvas, antialias: true });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  var scene = new THREE.Scene();
+  scene.background = new THREE.Color(0x02030a);
+  var camera = new THREE.PerspectiveCamera(50, 1, 0.1, 2000);
+  camera.position.set(0, 6, 14);
+  var controls = new THREE.OrbitControls(camera, canvas);
+  controls.enableDamping = true;
+  controls.dampingFactor = 0.08;
+
+  // starfield
+  (function () {
+    var n = 2500, pos = new Float32Array(n * 3), col = new Float32Array(n * 3);
+    for (var i = 0; i < n; i++) {
+      var u = Math.random() * 2 - 1, th = Math.random() * Math.PI * 2, r = 600 + Math.random() * 300;
+      var s = Math.sqrt(1 - u * u);
+      pos[i * 3] = r * s * Math.cos(th); pos[i * 3 + 1] = r * u; pos[i * 3 + 2] = r * s * Math.sin(th);
+      var b = 0.35 + Math.random() * 0.65, tint = Math.random();
+      col[i * 3] = b * (tint < 0.2 ? 1 : 0.85); col[i * 3 + 1] = b * 0.88; col[i * 3 + 2] = b * (tint > 0.7 ? 1 : 0.9);
+    }
+    var g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    g.setAttribute('color', new THREE.BufferAttribute(col, 3));
+    scene.add(new THREE.Points(g, new THREE.PointsMaterial({ size: 1.6, sizeAttenuation: false, vertexColors: true, depthWrite: false })));
+  })();
+
+  // faint reference grid for depth perception
+  var grid = new THREE.GridHelper(40, 40, 0x1a2250, 0x0d1230);
+  grid.position.y = -6;
+  grid.material.transparent = true; grid.material.opacity = 0.45;
+  scene.add(grid);
+
+  // glow sprite texture
+  function makeGlowTexture() {
+    var c = document.createElement('canvas'); c.width = c.height = 128;
+    var x = c.getContext('2d'), g = x.createRadialGradient(64, 64, 0, 64, 64, 64);
+    g.addColorStop(0, 'rgba(255,255,255,1)');
+    g.addColorStop(0.15, 'rgba(255,255,255,.55)');
+    g.addColorStop(0.4, 'rgba(255,255,255,.15)');
+    g.addColorStop(1, 'rgba(255,255,255,0)');
+    x.fillStyle = g; x.fillRect(0, 0, 128, 128);
+    return new THREE.CanvasTexture(c);
+  }
+  var glowTex = makeGlowTexture();
+
+  // ---------- bodies ----------
+  var bodies = [];
+  for (var i = 0; i < 3; i++) {
+    var color = new THREE.Color(COLORS[i]);
+    var group = new THREE.Group();
+    var core = new THREE.Mesh(new THREE.SphereGeometry(1, 32, 24), new THREE.MeshBasicMaterial({ color: color.clone().lerp(new THREE.Color(0xffffff), 0.35) }));
+    var glow = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex, color: color, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true }));
+    var glow2 = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex, color: color, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, opacity: 0.5 }));
+    var hit = new THREE.Mesh(new THREE.SphereGeometry(1, 8, 6), new THREE.MeshBasicMaterial({ visible: false }));
+    group.add(core, glow, glow2, hit);
+    scene.add(group);
+
+    var tg = new THREE.BufferGeometry();
+    tg.setAttribute('position', new THREE.BufferAttribute(new Float32Array(MAX_TRAIL * 3), 3));
+    tg.setAttribute('color', new THREE.BufferAttribute(new Float32Array(MAX_TRAIL * 3), 3));
+    tg.setDrawRange(0, 0);
+    var trail = new THREE.Line(tg, new THREE.LineBasicMaterial({ vertexColors: true, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false }));
+    trail.frustumCulled = false;
+    scene.add(trail);
+
+    var arrow = new THREE.ArrowHelper(new THREE.Vector3(1, 0, 0), new THREE.Vector3(), 1, COLORS[i], 0.25, 0.15);
+    scene.add(arrow);
+
+    bodies.push({
+      color: color, group: group, core: core, glow: glow, glow2: glow2, hit: hit, trail: trail, arrow: arrow,
+      ring: new Float32Array(MAX_TRAIL * 3), head: 0, count: 0,
+      pos: new THREE.Vector3(), vel: new THREE.Vector3(), acc: new THREE.Vector3(), mass: 1,
+      init: { m: 1, p: [0, 0, 0], v: [0, 0, 0] }
+    });
+  }
+
+  function radiusOf(m) { return 0.13 * Math.pow(m, 1 / 3); }
+  function applyLook(b) {
+    var r = radiusOf(b.mass);
+    b.core.scale.setScalar(r);
+    b.glow.scale.setScalar(r * 9);
+    b.glow2.scale.setScalar(r * 22);
+    b.hit.scale.setScalar(Math.max(r * 2.2, 0.35));
+  }
+
+  // ---------- UI ----------
+  var cardsEl = document.getElementById('cards');
+  var fields = []; // per body: {m, mOut, p:[3], v:[3]}
+  function numInput(label, step) {
+    var wrap = document.createElement('div');
+    var l = document.createElement('label'); l.className = 'f'; l.textContent = label;
+    var inp = document.createElement('input'); inp.type = 'number'; inp.step = step; inp.value = 0;
+    wrap.appendChild(l); wrap.appendChild(inp);
+    return { wrap: wrap, input: inp };
+  }
+  for (var bi = 0; bi < 3; bi++) {
+    var card = document.createElement('div'); card.className = 'card'; card.style.setProperty('--c', CSS[bi]);
+    var h = document.createElement('h2'); h.innerHTML = NAMES[bi] + ' body <span>gravity = mass</span>';
+    card.appendChild(h);
+    var mass = document.createElement('div'); mass.className = 'mass';
+    var ml = document.createElement('label'); ml.textContent = 'Gravity';
+    var mr = document.createElement('input'); mr.type = 'range'; mr.min = 0.1; mr.max = 10; mr.step = 0.1; mr.value = 1;
+    var mo = document.createElement('output'); mo.textContent = '1.0';
+    mass.appendChild(ml); mass.appendChild(mr); mass.appendChild(mo); card.appendChild(mass);
+    var pl = document.createElement('label'); pl.className = 'f'; pl.textContent = 'Position (x, y, z)'; card.appendChild(pl);
+    var pg = document.createElement('div'); pg.className = 'grid3';
+    var vl = document.createElement('label'); vl.className = 'f'; vl.textContent = 'Velocity (x, y, z)';
+    var vg = document.createElement('div'); vg.className = 'grid3';
+    var f = { m: mr, mOut: mo, p: [], v: [] };
+    ['x', 'y', 'z'].forEach(function (a) {
+      var p = numInput(a, 0.1); pg.appendChild(p.wrap); f.p.push(p.input);
+      var v = numInput('v' + a, 0.05); vg.appendChild(v.wrap); f.v.push(v.input);
+    });
+    card.appendChild(pg); card.appendChild(vl); card.appendChild(vg);
+    cardsEl.appendChild(card);
+    fields.push(f);
+  }
+
+  var elRun = document.getElementById('run'), elT = document.getElementById('tOut'), elState = document.getElementById('stateOut');
+  var elG = document.getElementById('G'), elSpeed = document.getElementById('speed'), elTrail = document.getElementById('trail');
+  var elZero = document.getElementById('zeroMom'), elFollow = document.getElementById('follow');
+  var running = false, simTime = 0;
+
+  function fmt(x, d) { return (Math.round(x * 1000) / 1000).toString(); }
+  function writeFields(i) {
+    var b = bodies[i].init, f = fields[i];
+    f.m.value = b.m; f.mOut.textContent = b.m.toFixed(1);
+    for (var k = 0; k < 3; k++) { f.p[k].value = fmt(b.p[k]); f.v[k].value = fmt(b.v[k]); }
+  }
+  function readFields() {
+    for (var i = 0; i < 3; i++) {
+      var f = fields[i], b = bodies[i].init;
+      b.m = Math.max(0.1, parseFloat(f.m.value) || 1);
+      f.mOut.textContent = b.m.toFixed(1);
+      for (var k = 0; k < 3; k++) { b.p[k] = parseFloat(f.p[k].value) || 0; b.v[k] = parseFloat(f.v[k].value) || 0; }
+    }
+  }
+  function setInit(list) { // list: [{m,p,v} x3]
+    for (var i = 0; i < 3; i++) {
+      bodies[i].init = { m: list[i].m, p: list[i].p.slice(), v: list[i].v.slice() };
+      writeFields(i);
+    }
+    resetSim();
+  }
+
+  // ---------- simulation ----------
+  function G() { return parseFloat(elG.value); }
+  function computeAcc() {
+    var g = G(), e2 = SOFTENING * SOFTENING;
+    for (var i = 0; i < 3; i++) bodies[i].acc.set(0, 0, 0);
+    for (i = 0; i < 3; i++) for (var j = i + 1; j < 3; j++) {
+      var a = bodies[i], b = bodies[j];
+      var dx = b.pos.x - a.pos.x, dy = b.pos.y - a.pos.y, dz = b.pos.z - a.pos.z;
+      var r2 = dx * dx + dy * dy + dz * dz + e2, inv = g / (r2 * Math.sqrt(r2));
+      var fa = b.mass * inv, fb = a.mass * inv;
+      a.acc.x += dx * fa; a.acc.y += dy * fa; a.acc.z += dz * fa;
+      b.acc.x -= dx * fb; b.acc.y -= dy * fb; b.acc.z -= dz * fb;
+    }
+  }
+  function adaptiveStep() {
+    var rmin = 1e9, mt = 0;
+    for (var i = 0; i < 3; i++) {
+      mt += bodies[i].mass;
+      for (var j = i + 1; j < 3; j++) rmin = Math.min(rmin, bodies[i].pos.distanceTo(bodies[j].pos));
+    }
+    var h = 0.02 * Math.sqrt(Math.pow(Math.max(rmin, SOFTENING), 3) / (G() * mt));
+    return Math.min(H_MAX, Math.max(H_MIN, h));
+  }
+  function stepSim(dtTotal) {
+    var left = dtTotal, steps = 0;
+    computeAcc();
+    while (left > 1e-9 && steps < MAX_STEPS_PER_FRAME) {
+      var h = Math.min(left, adaptiveStep());
+      var i, b;
+      for (i = 0; i < 3; i++) { b = bodies[i]; b.vel.addScaledVector(b.acc, h / 2); b.pos.addScaledVector(b.vel, h); }
+      computeAcc();
+      for (i = 0; i < 3; i++) { b = bodies[i]; b.vel.addScaledVector(b.acc, h / 2); }
+      left -= h; simTime += h; steps++;
+      trailAcc += h;
+      if (trailAcc >= TRAIL_DT) { trailAcc = 0; for (i = 0; i < 3; i++) pushTrail(bodies[i]); }
+    }
+  }
+
+  function pushTrail(b) {
+    var o = b.head * 3;
+    b.ring[o] = b.pos.x; b.ring[o + 1] = b.pos.y; b.ring[o + 2] = b.pos.z;
+    b.head = (b.head + 1) % MAX_TRAIL;
+    if (b.count < MAX_TRAIL) b.count++;
+  }
+  function updateTrail(b) {
+    var L = Math.min(b.count, parseInt(elTrail.value, 10));
+    var pa = b.trail.geometry.attributes.position.array, ca = b.trail.geometry.attributes.color.array;
+    var cr = b.color.r, cg = b.color.g, cb = b.color.b;
+    for (var k = 0; k < L; k++) {
+      var src = ((b.head - L + k + MAX_TRAIL * 2) % MAX_TRAIL) * 3, d = k * 3;
+      pa[d] = b.ring[src]; pa[d + 1] = b.ring[src + 1]; pa[d + 2] = b.ring[src + 2];
+      var t = (k + 1) / L; t = Math.pow(t, 1.5);
+      ca[d] = cr * t; ca[d + 1] = cg * t; ca[d + 2] = cb * t;
+    }
+    b.trail.geometry.attributes.position.needsUpdate = true;
+    b.trail.geometry.attributes.color.needsUpdate = true;
+    b.trail.geometry.setDrawRange(0, L);
+  }
+
+  function resetSim() {
+    running = false; simTime = 0; trailAcc = 0;
+    elRun.textContent = '▶ Start';
+    var p = [0, 0, 0], tm = 0, i, b;
+    for (i = 0; i < 3; i++) {
+      b = bodies[i];
+      b.mass = b.init.m;
+      b.pos.fromArray(b.init.p); b.vel.fromArray(b.init.v);
+      b.head = 0; b.count = 0;
+      applyLook(b);
+    }
+    if (elZero.checked) { // remove centre-of-mass drift
+      var mom = new THREE.Vector3();
+      for (i = 0; i < 3; i++) { mom.addScaledVector(bodies[i].vel, bodies[i].mass); tm += bodies[i].mass; }
+      mom.divideScalar(tm);
+      for (i = 0; i < 3; i++) bodies[i].vel.sub(mom);
+    }
+    for (i = 0; i < 3; i++) { pushTrail(bodies[i]); updateTrail(bodies[i]); }
+    syncVisuals();
+    elState.textContent = 'setup — drag the bodies, rotate with the mouse';
+  }
+
+  function syncVisuals() {
+    for (var i = 0; i < 3; i++) {
+      var b = bodies[i];
+      b.group.position.copy(b.pos);
+      var show = !running && simTime === 0, sp = b.vel.length();
+      b.arrow.visible = show && sp > 1e-4;
+      if (b.arrow.visible) {
+        b.arrow.position.copy(b.pos);
+        b.arrow.setDirection(b.vel.clone().normalize());
+        b.arrow.setLength(Math.max(0.5, sp * 3), 0.25, 0.15);
+      }
+    }
+    elT.textContent = simTime.toFixed(2);
+  }
+
+  // ---------- presets ----------
+  function rotateY(v, a) { var c = Math.cos(a), s = Math.sin(a); return [v[0] * c + v[2] * s, v[1], -v[0] * s + v[2] * c]; }
+  var presets = {
+    figure8: function () {
+      var p = [0.97000436, -0.24308753, 0], v = [0.466203685, 0.43236573, 0], v3 = [-0.93240737, -0.86473146, 0];
+      setInit([
+        { m: 1, p: p, v: v },
+        { m: 1, p: [-p[0], -p[1], 0], v: v },
+        { m: 1, p: [0, 0, 0], v: v3 }
+      ]);
+      elG.value = 1; syncGlobals();
+    },
+    lagrange: function () {
+      var a = 3, r = a / Math.sqrt(3), w = Math.sqrt(3 / (a * a * a)), list = [];
+      for (var i = 0; i < 3; i++) {
+        var th = i * 2 * Math.PI / 3;
+        list.push({ m: 1, p: [r * Math.cos(th), 0, r * Math.sin(th)], v: [-r * w * Math.sin(th), 0.25 * (i - 1), r * w * Math.cos(th)] });
+      }
+      setInit(list); elG.value = 1; syncGlobals();
+    },
+    chaos: function () {
+      var l = [];
+      for (var i = 0; i < 3; i++) l.push({ m: 1 + Math.random() * 1.5, p: [rnd(4), rnd(3), rnd(4)], v: [rnd(0.5), rnd(0.5), rnd(0.5)] });
+      setInit(l); elG.value = 1; syncGlobals();
+    },
+    sun: function () {
+      setInit([
+        { m: 10, p: [0, 0, 0], v: [0, 0, 0] },
+        { m: 0.3, p: [3, 0, 0], v: [0, 0.4, Math.sqrt(10 / 3)] },
+        { m: 0.5, p: [-5.5, 0.5, 0], v: [0, -0.2, -Math.sqrt(10 / 5.5)] }
+      ]);
+      elG.value = 1; syncGlobals();
+    },
+    slingshot: function () {
+      setInit([
+        { m: 6, p: [-2, 0, 0], v: [0, 0, 0.35] },
+        { m: 0.4, p: [6, 0.3, 2], v: [-1.6, 0, -0.1] },
+        { m: 1, p: [2, 1.5, -3], v: [0.3, -0.2, 0.9] }
+      ]);
+      elG.value = 1; syncGlobals();
+    }
+  };
+  function rnd(r) { return (Math.random() * 2 - 1) * r; }
+
+  // ---------- events ----------
+  function syncGlobals() {
+    document.getElementById('gOut').textContent = parseFloat(elG.value).toFixed(1);
+    document.getElementById('speedOut').textContent = parseFloat(elSpeed.value).toFixed(1) + '×';
+    document.getElementById('trailOut').textContent = elTrail.value;
+  }
+  syncGlobals();
+  [elG, elSpeed, elTrail].forEach(function (e) { e.addEventListener('input', syncGlobals); });
+  elG.addEventListener('change', resetSim);
+  elZero.addEventListener('change', resetSim);
+
+  fields.forEach(function (f) {
+    var onEdit = function () { readFields(); resetSim(); };
+    f.m.addEventListener('input', onEdit);
+    f.p.concat(f.v).forEach(function (inp) { inp.addEventListener('change', onEdit); });
+  });
+
+  elRun.addEventListener('click', function () {
+    running = !running;
+    elRun.textContent = running ? '❚❚ Pause' : '▶ Resume';
+    elState.textContent = running ? 'running' : 'paused';
+    syncVisuals();
+  });
+  document.getElementById('reset').addEventListener('click', resetSim);
+  document.getElementById('random').addEventListener('click', function () { presets.chaos(); });
+  document.getElementById('preset').addEventListener('change', function (e) {
+    if (presets[e.target.value]) presets[e.target.value]();
+    e.target.value = '';
+  });
+  var panel = document.getElementById('panel'), tog = document.getElementById('toggle');
+  tog.addEventListener('click', function () {
+    panel.classList.toggle('collapsed');
+    tog.textContent = panel.classList.contains('collapsed') ? 'Show panel' : 'Hide panel';
+    document.getElementById('hud').style.left = panel.classList.contains('collapsed') ? '14px' : '';
+  });
+
+  // drag bodies in setup (before the simulation has started)
+  var ray = new THREE.Raycaster(), ndc = new THREE.Vector2(), dragIdx = -1, dragPlane = new THREE.Plane(), hitPt = new THREE.Vector3();
+  function setNdc(e) {
+    var r = canvas.getBoundingClientRect();
+    ndc.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
+    ray.setFromCamera(ndc, camera);
+  }
+  function pick() {
+    var hits = ray.intersectObjects(bodies.map(function (b) { return b.hit; }));
+    return hits.length ? bodies.findIndex(function (b) { return b.hit === hits[0].object; }) : -1;
+  }
+  canvas.addEventListener('pointerdown', function (e) {
+    if (running || simTime > 0) return;
+    setNdc(e);
+    var i = pick();
+    if (i < 0) return;
+    dragIdx = i; controls.enabled = false; canvas.setPointerCapture(e.pointerId);
+    var n = camera.getWorldDirection(new THREE.Vector3());
+    dragPlane.setFromNormalAndCoplanarPoint(n, bodies[i].pos);
+  });
+  canvas.addEventListener('pointermove', function (e) {
+    setNdc(e);
+    if (dragIdx >= 0) {
+      if (ray.ray.intersectPlane(dragPlane, hitPt)) {
+        var b = bodies[dragIdx];
+        b.init.p = [hitPt.x, hitPt.y, hitPt.z];
+        writeFields(dragIdx);
+        b.pos.copy(hitPt);
+        for (var k = 0; k < 3; k++) { bodies[k].head = 0; bodies[k].count = 0; pushTrail(bodies[k]); updateTrail(bodies[k]); }
+        syncVisuals();
+      }
+    } else if (!running && simTime === 0) {
+      canvas.style.cursor = pick() >= 0 ? 'grab' : 'default';
+    }
+  });
+  function endDrag(e) {
+    if (dragIdx < 0) return;
+    dragIdx = -1; controls.enabled = true;
+    try { canvas.releasePointerCapture(e.pointerId); } catch (_) {}
+    readFields(); resetSim();
+  }
+  canvas.addEventListener('pointerup', endDrag);
+  canvas.addEventListener('pointercancel', endDrag);
+
+  function resize() {
+    var w = window.innerWidth, h = window.innerHeight;
+    renderer.setSize(w, h, false);
+    camera.aspect = w / h; camera.updateProjectionMatrix();
+  }
+  window.addEventListener('resize', resize); resize();
+
+  // ---------- main loop ----------
+  var clock = new THREE.Clock(), com = new THREE.Vector3(), comPrev = new THREE.Vector3();
+  function centreOfMass(out) {
+    var tm = 0; out.set(0, 0, 0);
+    bodies.forEach(function (b) { out.addScaledVector(b.pos, b.mass); tm += b.mass; });
+    return out.divideScalar(tm);
+  }
+  function frame() {
+    requestAnimationFrame(frame);
+    var dt = Math.min(clock.getDelta(), 0.05);
+    if (running) {
+      stepSim(dt * parseFloat(elSpeed.value));
+      syncVisuals();
+    }
+    for (var j = 0; j < 3; j++) updateTrail(bodies[j]);
+    if (elFollow.checked) {
+      centreOfMass(com);
+      var d = com.clone().sub(controls.target);
+      controls.target.add(d); camera.position.add(d);
+    }
+    controls.update();
+    renderer.render(scene, camera);
+  }
+
+  presets.chaos();
+  frame();
+})();
+</script>
+</body>
+</html>
