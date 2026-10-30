@@ -22,5 +22,11 @@
     "description": "Cellular automata playground: draw patterns, stamp from a pattern library, and try rule variants (Life, HighLife, Seeds and more) at adjustable speed.",
     "path": "game-of-life-explorer/life.html",
     "tags": ["cellular automata", "simulation", "canvas"]
+  },
+  {
+    "name": "Inside a Tiny LLM",
+    "description": "Watch a small transformer read a sentence and write an answer token by token, with its embeddings, attention and neurons shown live.",
+    "path": "llm-inside/llm-inside.html",
+    "tags": ["AI", "visualization", "transformer"]
   }
 ]
