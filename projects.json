@@ -70,5 +70,11 @@
     "description": "Gray-Scott chemistry on the GPU: paint chemicals and grow coral, spots, stripes and mazes, picked from a parameter map.",
     "path": "reaction-diffusion/reaction.html",
     "tags": ["simulation", "patterns", "WebGL"]
+  },
+  {
+    "name": "Neural Net Playground",
+    "description": "Train a small neural network from scratch in the browser and watch its decision boundary and every neuron's view of the data evolve.",
+    "path": "neural-net-playground/nn.html",
+    "tags": ["AI", "neural network", "visualization"]
   }
 ]
