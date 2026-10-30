@@ -30,6 +30,18 @@
     "tags": ["AI", "visualization", "transformer"]
   },
   {
+    "name": "Mandelbrot & Julia Explorer",
+    "description": "Zoom into the Mandelbrot set on the GPU and watch the matching Julia set change as you move over it.",
+    "path": "mandelbrot-julia/fractal.html",
+    "tags": ["math", "fractal", "WebGL"]
+  },
+  {
+    "name": "Chaos Game & IFS Ferns",
+    "description": "Random jumps towards corners or random affine maps build the Sierpinski triangle, Barnsley fern and other fractals from millions of points.",
+    "path": "chaos-game/chaos.html",
+    "tags": ["math", "fractal", "canvas"]
+  },
+  {
     "name": "Neural Net Playground",
     "description": "Train a small neural network from scratch in the browser and watch its decision boundary and every neuron's view of the data evolve.",
     "path": "neural-net-playground/nn.html",
