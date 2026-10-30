@@ -53,6 +53,12 @@ The user's original brief (paraphrased):
 - Layout: `layoutStep` (constants `REST, KS, ETA, REP, RCUT, MAXSTEP, GRAV`).
 - Three.js: scene setup, `rebuildGLBuffers`, `buildSprites`/`updateLOD`/`placeSprites`, marker, `frame()` main loop, status `setInterval`.
 
+## Decisions and user preferences
+- Node limit: user first wanted it removed, then asked for it back with default 15000 plus a "no limit" option that warns about slowdowns.
+- "Rectangles move along long side only" is ON by default (user request).
+- Blocks are placed by drag and drop from the palette, not randomly on button press (user request). Random placement is only used for the initial 3 blocks and the "3 random blocks" button.
+- 3D view must support mouse rotate, pan and zoom.
+
 ## Known issues / not done yet
 - Not browser-tested for: custom-size palette drag, red "cannot place" preview, touch devices, very large graphs (hundreds of thousands of nodes).
 - Block identity is always distinct (no option to treat same-shaped blocks as interchangeable, which would shrink the state space a lot).

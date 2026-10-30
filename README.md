@@ -7,6 +7,9 @@ A collection of small side projects, served with GitHub Pages. The root `index.h
 - `projects.json`: the list of projects shown on the landing page.
 - One folder per project, e.g. `klotski-state-space/` (contains the page and a `PROJECT.md` handoff document).
 
+## For AI assistants
+See `AGENTS.md` (also loaded via `CLAUDE.md`) for the conventions: one folder per project, a `PROJECT.md` handoff per folder (template: `PROJECT_TEMPLATE.md`), and registration in `projects.json`.
+
 ## Adding a project
 1. Create a folder for it with its HTML page (and a `PROJECT.md` if you want to continue it in a new chat).
 2. Add an entry to `projects.json`:
