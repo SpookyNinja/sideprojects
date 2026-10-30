@@ -7,6 +7,7 @@ This repo holds many small side projects, hosted with GitHub Pages. Read this fi
 - **The root `index.html` is the landing page** and must stay at the repo root. Give a project's own page a descriptive name (e.g. `klotski.html`) rather than `index.html`, so it is never confused with the landing page.
 - **Every project folder contains a `PROJECT.md`**: a handoff document so a new chat can pick up the work without any other context. Use `PROJECT_TEMPLATE.md` as the starting point.
 - **Every project is registered in `projects.json`** at the repo root (the landing page reads it). Do not hard-code projects in the root `index.html`.
+- **Every project page has a "Home" button fixed at the bottom right** linking back to the landing page (`../index.html` for pages one folder deep). Copy it from `klotski-state-space/klotski.html` (`#home`).
 - Projects should be static (plain HTML/CSS/JS, optional CDN libraries) so they work on GitHub Pages without a build step. Use exact library versions in CDN URLs.
 
 ## When you are given a new project to upload
