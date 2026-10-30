@@ -1,0 +1,736 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Klotski State Space</title>
+<style>
+  :root { --bg:#0a1128; --panel:#0e1733; --line:#2a3560; --fg:#dfe6ff; --dim:#8a96c4; --acc:#7c5cff; }
+  * { box-sizing: border-box; }
+  html, body { margin:0; height:100%; background:var(--bg); color:var(--fg);
+    font:13px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif; overflow:hidden; }
+  #app { display:flex; height:100%; }
+  #left { width:min(42vw, 520px); min-width:300px; display:flex; flex-direction:column; gap:10px;
+    padding:12px; background:var(--panel); border-right:1px solid var(--line); overflow-y:auto; }
+  #boardWrap { flex:1; min-height:240px; position:relative; }
+  #board { position:absolute; inset:0; width:100%; height:100%; touch-action:none; cursor:grab; }
+  #board.drag { cursor:grabbing; }
+  #right { flex:1; position:relative; min-width:0; }
+  #gl { position:absolute; inset:0; width:100%; height:100%; display:block; }
+  fieldset { border:1px solid var(--line); border-radius:8px; margin:0; padding:8px 10px 10px; }
+  legend { color:var(--dim); padding:0 6px; font-size:11px; text-transform:uppercase; letter-spacing:.08em; }
+  .row { display:flex; flex-wrap:wrap; gap:6px; align-items:center; }
+  button { background:#1a2552; color:var(--fg); border:1px solid var(--line); border-radius:6px;
+    padding:5px 10px; font:inherit; cursor:pointer; }
+  [data-add], #addCustom { cursor:grab; touch-action:none; user-select:none; }
+  button:hover { background:#243272; border-color:var(--acc); }
+  input[type=number] { width:52px; background:#0a1128; color:var(--fg); border:1px solid var(--line);
+    border-radius:6px; padding:4px 6px; font:inherit; }
+  input[type=number].wide { width:76px; }
+  label { color:var(--dim); display:inline-flex; align-items:center; gap:5px; }
+  input[type=range] { width:110px; accent-color:var(--acc); }
+  #hint { color:var(--dim); font-size:12px; }
+  #status { position:absolute; left:12px; bottom:10px; color:var(--dim); font-size:12px;
+    background:rgba(10,17,40,.75); padding:4px 8px; border-radius:6px; pointer-events:none; }
+  #msg { color:#ff8a8a; min-height:1.2em; font-size:12px; }
+  @media (max-width:760px) {
+    #app { flex-direction:column; }
+    #left { width:100%; min-width:0; height:48%; flex:none; border-right:0; border-bottom:1px solid var(--line); }
+    #boardWrap { min-height:200px; }
+    #right { flex:1; }
+    #navhint { display:none; }
+  }
+  .sw { display:inline-block; width:12px; height:12px; border-radius:3px; border:1px solid #fff4; }
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="left">
+    <div id="boardWrap"><canvas id="board"></canvas></div>
+    <div id="msg"></div>
+    <div id="hint">Drag a block type from the palette onto the grid to place it. Drag placed blocks to slide them. Right-click or double-click a block (or select + Delete) to remove it.
+      Click a node in the graph to load that state.</div>
+    <fieldset>
+      <legend>Add block — drag onto the grid</legend>
+      <div class="row">
+        <button data-add="1,1">1×1</button>
+        <button data-add="1,2">1×2</button>
+        <button data-add="2,1">2×1</button>
+        <button data-add="2,2">2×2</button>
+        <label>custom <input type="number" id="cw" min="1" max="10" value="1"> × <input type="number" id="ch" min="1" max="10" value="3"></label>
+        <button id="addCustom">Drag custom</button>
+      </div>
+      <div class="row" style="margin-top:6px">
+        <button id="randomize">3 random blocks</button>
+        <button id="clear">Clear board</button>
+      </div>
+    </fieldset>
+    <fieldset>
+      <legend>Grid size</legend>
+      <div class="row">
+        <label>cols <input type="number" id="cols" min="2" max="10" value="4"></label>
+        <label>rows <input type="number" id="rows" min="2" max="10" value="5"></label>
+        <button id="applyGrid">Apply</button>
+      </div>
+    </fieldset>
+    <fieldset>
+      <legend>Network</legend>
+      <div class="row">
+        <label>build speed <input type="range" id="speed" min="1" max="100" value="35"></label>
+        <label title="Rectangles can only slide along their long side; squares still move freely"><input type="checkbox" id="axisOnly" checked> rectangles move along long side only</label>
+      </div>
+      <div class="row" style="margin-top:6px">
+        <label>max nodes <input type="number" class="wide" id="maxNodes" min="100" max="10000000" step="1000" value="15000"></label>
+        <label><input type="checkbox" id="noLimit"> no limit</label>
+      </div>
+      <div id="limitWarn" style="display:none;color:#ff9a9a;font-size:12px;margin-top:4px">⚠ Without a limit the graph can grow to millions of states and may slow down or crash your browser.</div>
+      <div class="row" style="margin-top:6px">
+        <label><input type="checkbox" id="follow"> follow marker</label>
+        <button id="fit">Fit view</button>
+        <button id="findMe">Zoom to marker</button>
+        <button id="rebuild">Rebuild</button>
+      </div>
+    </fieldset>
+  </div>
+  <div id="right">
+    <canvas id="gl"></canvas>
+    <div id="status"></div>
+    <div id="navhint" style="position:absolute;right:12px;top:10px;color:var(--dim);font-size:12px;background:rgba(10,17,40,.75);padding:4px 8px;border-radius:6px;pointer-events:none">
+      left-drag: rotate · right-drag / shift+drag: move · wheel: zoom · click node: load state</div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+<script>
+"use strict";
+/* ------------------------------------------------------------------ *
+ *  Puzzle state
+ * ------------------------------------------------------------------ */
+const PALETTE = ['#ff4757','#7c3aed','#00a8b5','#2ed84a','#ffa502','#ffd32a','#ff6bcb','#3d8bff','#a4de02','#ff7f50','#18dcff','#c56cf0'];
+const S = { cols:4, rows:5, blocks:[], sel:-1, colorCounter:0 };
+const $ = id => document.getElementById(id);
+const DIRS = [[1,0],[-1,0],[0,1],[0,-1]];
+
+function msg(t){ $('msg').textContent = t || ''; if (t) setTimeout(()=>{ if ($('msg').textContent===t) $('msg').textContent=''; }, 2500); }
+
+function occupancy(skip=-1){
+  const occ = new Int16Array(S.cols*S.rows).fill(-1);
+  S.blocks.forEach((b,i)=>{ if(i===skip) return;
+    for (let y=0;y<b.h;y++) for (let x=0;x<b.w;x++) occ[(b.y+y)*S.cols+b.x+x]=i; });
+  return occ;
+}
+function addBlock(w,h,silent){
+  if (w>S.cols || h>S.rows){ msg('Block does not fit the grid'); return false; }
+  const occ = occupancy(), spots = [];
+  for (let y=0;y<=S.rows-h;y++) for (let x=0;x<=S.cols-w;x++){
+    let ok = true;
+    for (let j=0;j<h&&ok;j++) for (let i=0;i<w;i++) if (occ[(y+j)*S.cols+x+i]>=0){ ok=false; break; }
+    if (ok) spots.push([x,y]);
+  }
+  if (!spots.length){ msg('No free space for that block'); return false; }
+  const [x,y] = spots[Math.random()*spots.length|0];
+  S.blocks.push({w,h,x,y,color:PALETTE[S.colorCounter++ % PALETTE.length]});
+  S.sel = S.blocks.length-1;
+  if (!silent) structureChanged();
+  return true;
+}
+function removeBlock(i){
+  if (i<0 || i>=S.blocks.length) return;
+  S.blocks.splice(i,1); S.sel=-1; structureChanged();
+}
+function randomBlocks(n=3){
+  S.blocks=[]; S.sel=-1; S.colorCounter = Math.random()*PALETTE.length|0;
+  const sizes=[[1,2],[2,1],[1,1],[1,2],[2,1],[2,2]];
+  let guard=0;
+  while (S.blocks.length<n && guard++<50){
+    const [w,h]=sizes[Math.random()*sizes.length|0];
+    addBlock(w,h,true);
+  }
+  S.sel=-1;
+  structureChanged();
+}
+
+/* ------------------------------------------------------------------ *
+ *  Drawing (shared between board and 3D thumbnails)
+ * ------------------------------------------------------------------ */
+function rr(ctx,x,y,w,h,r){
+  r=Math.min(r,w/2,h/2);
+  ctx.beginPath(); ctx.moveTo(x+r,y); ctx.arcTo(x+w,y,x+w,y+h,r); ctx.arcTo(x+w,y+h,x,y+h,r);
+  ctx.arcTo(x,y+h,x,y,r); ctx.arcTo(x,y,x+w,y,r); ctx.closePath();
+}
+function geom(W,H,cols,rows,pad){
+  const cell = Math.min((W-2*pad)/cols,(H-2*pad)/rows);
+  return { cell, ox:(W-cell*cols)/2, oy:(H-cell*rows)/2 };
+}
+function drawGrid(ctx,W,H,cols,rows,blocks,o={}){
+  const pad=o.pad ?? 10, g=geom(W,H,cols,rows,pad), c=g.cell;
+  if (!(c>0)) return;
+  ctx.fillStyle='#0a1128'; ctx.fillRect(0,0,W,H);
+  ctx.strokeStyle=o.border || '#e8ecf5'; ctx.lineWidth=o.bw ?? 3;
+  rr(ctx,g.ox-3,g.oy-3,c*cols+6,c*rows+6,3); ctx.stroke();
+  ctx.fillStyle='#e8ecf5';
+  const ds=Math.max(1.5,c*0.045);
+  for (let y=0;y<rows;y++) for (let x=0;x<cols;x++)
+    ctx.fillRect(g.ox+(x+.5)*c-ds,g.oy+(y+.5)*c-ds,ds*2,ds*2);
+  const ins=c*0.08;
+  const pv=o.preview;
+  blocks.forEach((b,i)=>{
+    ctx.fillStyle=b.color;
+    rr(ctx,g.ox+b.x*c+ins,g.oy+b.y*c+ins,b.w*c-2*ins,b.h*c-2*ins,c*0.1); ctx.fill();
+    if (i===o.sel){ ctx.strokeStyle='#fff'; ctx.lineWidth=2; ctx.stroke(); }
+  });
+  if (pv){
+    ctx.globalAlpha=0.65; ctx.fillStyle=pv.ok?pv.color:'#ff3b3b';
+    rr(ctx,g.ox+pv.x*c+ins,g.oy+pv.y*c+ins,pv.w*c-2*ins,pv.h*c-2*ins,c*0.1); ctx.fill();
+    ctx.globalAlpha=1; ctx.strokeStyle=pv.ok?'#fff':'#ff3b3b'; ctx.lineWidth=2; ctx.setLineDash([6,4]); ctx.stroke(); ctx.setLineDash([]);
+  }
+}
+
+/* ------------------------------------------------------------------ *
+ *  Board UI
+ * ------------------------------------------------------------------ */
+const board=$('board'), bctx=board.getContext('2d');
+let bW=0,bH=0;
+function sizeBoard(){
+  const dpr=window.devicePixelRatio||1;
+  bW=board.clientWidth; bH=board.clientHeight;
+  board.width=bW*dpr; board.height=bH*dpr;
+  bctx.setTransform(dpr,0,0,dpr,0,0);
+  drawBoard();
+}
+let preview=null;
+function drawBoard(){ drawGrid(bctx,bW,bH,S.cols,S.rows,S.blocks,{sel:S.sel,pad:12,preview}); }
+new ResizeObserver(sizeBoard).observe($('boardWrap'));
+
+function cellAt(ev){
+  const r=board.getBoundingClientRect(), g=geom(bW,bH,S.cols,S.rows,12);
+  return { fx:(ev.clientX-r.left-g.ox)/g.cell, fy:(ev.clientY-r.top-g.oy)/g.cell };
+}
+function blockAt(fx,fy){
+  const cx=Math.floor(fx), cy=Math.floor(fy);
+  for (let i=S.blocks.length-1;i>=0;i--){ const b=S.blocks[i];
+    if (cx>=b.x&&cx<b.x+b.w&&cy>=b.y&&cy<b.y+b.h) return i; }
+  return -1;
+}
+function dirAllowed(w,h,dx,dy){
+  if (!$('axisOnly').checked || w===h) return true;
+  return w>h ? dy===0 : dx===0;
+}
+function tryStep(b,dx,dy){
+  if (!dirAllowed(b.w,b.h,dx,dy)) return false;
+  const nx=b.x+dx, ny=b.y+dy;
+  if (nx<0||ny<0||nx+b.w>S.cols||ny+b.h>S.rows) return false;
+  for (const o of S.blocks){ if (o===b) continue;
+    if (nx<o.x+o.w && nx+b.w>o.x && ny<o.y+o.h && ny+b.h>o.y) return false; }
+  b.x=nx; b.y=ny; return true;
+}
+function moveToward(b,tx,ty){
+  for (let n=0;n<64;n++){
+    const dx=tx-b.x, dy=ty-b.y;
+    if (!dx && !dy) break;
+    const order = Math.abs(dx)>=Math.abs(dy) ? [[Math.sign(dx),0],[0,Math.sign(dy)]] : [[0,Math.sign(dy)],[Math.sign(dx),0]];
+    let moved=false;
+    for (const [sx,sy] of order){ if ((sx||sy) && tryStep(b,sx,sy)){ moved=true; break; } }
+    if (!moved) break;
+    onMoved();
+  }
+}
+let drag=null;
+board.addEventListener('pointerdown',ev=>{
+  if (ev.button!==0) return;
+  const {fx,fy}=cellAt(ev), i=blockAt(fx,fy);
+  S.sel=i; drawBoard();
+  if (i<0) return;
+  const b=S.blocks[i];
+  drag={i,gx:fx-b.x,gy:fy-b.y};
+  board.setPointerCapture(ev.pointerId); board.classList.add('drag');
+});
+board.addEventListener('pointermove',ev=>{
+  if (!drag) return;
+  const {fx,fy}=cellAt(ev), b=S.blocks[drag.i];
+  moveToward(b, Math.round(fx-drag.gx), Math.round(fy-drag.gy));
+  drawBoard();
+});
+const endDrag=()=>{ drag=null; board.classList.remove('drag'); };
+board.addEventListener('pointerup',endDrag);
+board.addEventListener('pointercancel',endDrag);
+board.addEventListener('contextmenu',ev=>{
+  ev.preventDefault(); const {fx,fy}=cellAt(ev); removeBlock(blockAt(fx,fy));
+});
+board.addEventListener('dblclick',ev=>{ const {fx,fy}=cellAt(ev); removeBlock(blockAt(fx,fy)); });
+window.addEventListener('keydown',ev=>{
+  if (/INPUT|TEXTAREA/.test(document.activeElement.tagName)) return;
+  if (ev.key==='Delete'||ev.key==='Backspace') removeBlock(S.sel);
+  const d={ArrowLeft:[-1,0],ArrowRight:[1,0],ArrowUp:[0,-1],ArrowDown:[0,1]}[ev.key];
+  if (d && S.sel>=0){ ev.preventDefault(); if (tryStep(S.blocks[S.sel],d[0],d[1])){ onMoved(); drawBoard(); } }
+});
+
+function canPlace(w,h,x,y){
+  if (x<0||y<0||x+w>S.cols||y+h>S.rows) return false;
+  for (const o of S.blocks) if (x<o.x+o.w && x+w>o.x && y<o.y+o.h && y+h>o.y) return false;
+  return true;
+}
+function placeBlock(w,h,x,y){
+  S.blocks.push({w,h,x,y,color:PALETTE[S.colorCounter++ % PALETTE.length]});
+  S.sel=S.blocks.length-1; structureChanged();
+}
+function startPaletteDrag(btn,getSize){
+  btn.addEventListener('pointerdown',ev=>{
+    if (ev.button!==0) return;
+    ev.preventDefault();
+    const [w,h]=getSize();
+    if (w<1||h<1||w>S.cols||h>S.rows){ msg('Block does not fit the grid'); return; }
+    const color=PALETTE[S.colorCounter % PALETTE.length];
+    const ghost=document.createElement('div');
+    ghost.style.cssText='position:fixed;z-index:99;pointer-events:none;border-radius:6px;opacity:.85;border:2px solid #fff8;background:'+color;
+    document.body.appendChild(ghost);
+    const sizeGhost=()=>{
+      const cell=geom(bW,bH,S.cols,S.rows,12).cell;
+      ghost.style.width=cell*w+'px'; ghost.style.height=cell*h+'px';
+    };
+    sizeGhost();
+    const move=e=>{
+      const cell=geom(bW,bH,S.cols,S.rows,12).cell;
+      ghost.style.left=(e.clientX-cell*w/2)+'px'; ghost.style.top=(e.clientY-cell*h/2)+'px';
+      const r=board.getBoundingClientRect();
+      const inside=e.clientX>=r.left&&e.clientX<=r.right&&e.clientY>=r.top&&e.clientY<=r.bottom;
+      if (inside){
+        const {fx,fy}=cellAt(e), x=Math.round(fx-w/2), y=Math.round(fy-h/2);
+        preview={x,y,w,h,color,ok:canPlace(w,h,x,y)};
+      } else preview=null;
+      drawBoard();
+    };
+    const up=e=>{
+      window.removeEventListener('pointermove',move); window.removeEventListener('pointerup',up);
+      window.removeEventListener('pointercancel',up);
+      ghost.remove();
+      const p=preview; preview=null;
+      if (p && e.type==='pointerup'){
+        if (p.ok) placeBlock(w,h,p.x,p.y); else { msg('Cannot place there: occupied or outside the grid'); drawBoard(); }
+      } else drawBoard();
+    };
+    window.addEventListener('pointermove',move); window.addEventListener('pointerup',up);
+    window.addEventListener('pointercancel',up);
+    move(ev);
+  });
+}
+document.querySelectorAll('[data-add]').forEach(btn=>
+  startPaletteDrag(btn,()=>btn.dataset.add.split(',').map(Number)));
+startPaletteDrag($('addCustom'),()=>[+$('cw').value|0,+$('ch').value|0]);
+$('randomize').onclick=()=>randomBlocks(3);
+$('clear').onclick=()=>{ S.blocks=[]; S.sel=-1; structureChanged(); };
+$('applyGrid').onclick=()=>{
+  S.cols=Math.min(10,Math.max(2,+$('cols').value|0)); S.rows=Math.min(10,Math.max(2,+$('rows').value|0));
+  $('cols').value=S.cols; $('rows').value=S.rows; randomBlocks(3);
+};
+
+/* ------------------------------------------------------------------ *
+ *  State graph (built incrementally by BFS)
+ * ------------------------------------------------------------------ */
+const MAX_NODES=100000000;
+const G = { N:0,E:0,cap:MAX_NODES,capN:0,capE:0,axisOnly:false,B:0,stride:0,cols:0,rows:0,
+  states:null,pos:null,f:null,ea:null,eb:null,exp:null,map:new Map(),edgeSet:new Set(),
+  queue:[],qh:0,cur:0,bw:[],bh:[],bc:[],settled:false,occ:null,tmp:null };
+
+function resetGraph(){
+  const B=S.blocks.length;
+  G.B=B; G.stride=2*B; G.cols=S.cols; G.rows=S.rows;
+  G.axisOnly=$('axisOnly').checked;
+  G.cap=$('noLimit').checked?MAX_NODES:(Math.max(100,+$('maxNodes').value|0)||15000);
+  G.capN=4096; G.capE=8192;
+  G.states=new Int16Array(G.capN*Math.max(G.stride,1));
+  G.pos=new Float32Array(G.capN*3); G.f=new Float32Array(G.capN*3);
+  G.ea=new Int32Array(G.capE); G.eb=new Int32Array(G.capE);
+  G.exp=new Uint8Array(G.capN);
+  G.map=new Map(); G.edgeSet=new Set(); G.queue=[]; G.qh=0; G.N=0; G.E=0; G.settled=false;
+  G.bw=S.blocks.map(b=>b.w); G.bh=S.blocks.map(b=>b.h); G.bc=S.blocks.map(b=>b.color);
+  G.occ=new Int16Array(S.cols*S.rows); G.tmp=new Int16Array(G.stride);
+  const s=new Int16Array(G.stride);
+  S.blocks.forEach((b,i)=>{ s[2*i]=b.x; s[2*i+1]=b.y; });
+  G.cur=createNode(s,-1);
+  expand(G.cur,true);
+  rebuildGLBuffers(); buildSprites();
+}
+function growArr(a,n){ const r=new a.constructor(n); r.set(a); return r; }
+function ensureNodeCap(n){
+  if (n<=G.capN) return;
+  const old=G.capN; G.capN=Math.max(n,old*2);
+  G.states=growArr(G.states,G.capN*Math.max(G.stride,1));
+  G.pos=growArr(G.pos,G.capN*3); G.f=growArr(G.f,G.capN*3); G.exp=growArr(G.exp,G.capN);
+  G.glDirty=true;
+}
+function ensureEdgeCap(n){
+  if (n<=G.capE) return;
+  G.capE=Math.max(n,G.capE*2);
+  G.ea=growArr(G.ea,G.capE); G.eb=growArr(G.eb,G.capE); G.glDirty=true;
+}
+function createNode(s,parent){
+  ensureNodeCap(G.N+1);
+  const i=G.N++, o=i*G.stride;
+  for (let k=0;k<G.stride;k++) G.states[o+k]=s[k];
+  const p=parent>=0?parent*3:-1;
+  for (let k=0;k<3;k++) G.pos[i*3+k]=(p>=0?G.pos[p+k]:0)+(Math.random()-.5)*0.4;
+  G.map.set(s.join(','),i);
+  G.queue.push(i); G.settled=false;
+  return i;
+}
+function addEdge(a,b){
+  if (a>b){ const t=a; a=b; b=t; }
+  const k=a*MAX_NODES+b;
+  if (G.edgeSet.has(k)) return;
+  ensureEdgeCap(G.E+1);
+  G.edgeSet.add(k); G.ea[G.E]=a; G.eb[G.E]=b; G.E++; G.settled=false;
+}
+function expand(i,force){
+  if (G.exp[i]) return; G.exp[i]=1;
+  const {B,stride,cols,rows,occ,tmp}=G, o=i*stride;
+  let states=G.states;
+  occ.fill(-1);
+  for (let b=0;b<B;b++){
+    const x=states[o+2*b], y=states[o+2*b+1];
+    for (let j=0;j<G.bh[b];j++) for (let k=0;k<G.bw[b];k++) occ[(y+j)*cols+x+k]=b;
+  }
+  for (let b=0;b<B;b++){
+    const x=states[o+2*b], y=states[o+2*b+1], w=G.bw[b], h=G.bh[b];
+    for (const [dx,dy] of DIRS){
+      if (G.axisOnly && w!==h && (w>h ? dy!==0 : dx!==0)) continue;
+      const nx=x+dx, ny=y+dy;
+      if (nx<0||ny<0||nx+w>cols||ny+h>rows) continue;
+      let ok=true;
+      for (let j=0;j<h&&ok;j++) for (let k=0;k<w;k++){
+        const c=occ[(ny+j)*cols+nx+k]; if (c>=0 && c!==b){ ok=false; break; }
+      }
+      if (!ok) continue;
+      for (let k=0;k<stride;k++) tmp[k]=states[o+k];
+      tmp[2*b]=nx; tmp[2*b+1]=ny;
+      const key=tmp.join(',');
+      let j=G.map.get(key);
+      if (j===undefined){
+        if (G.N>=G.cap) continue;
+        j=createNode(tmp,i); states=G.states;
+      }
+      addEdge(i,j);
+    }
+  }
+}
+function onMoved(){
+  const key=S.blocks.map(b=>b.x+','+b.y).join(',');
+  let id=G.map.get(key);
+  if (id===undefined){
+    if (G.N>=G.cap) return;
+    const s=new Int16Array(G.stride);
+    S.blocks.forEach((b,i)=>{ s[2*i]=b.x; s[2*i+1]=b.y; });
+    id=createNode(s,G.cur);
+  }
+  expand(id,true);
+  G.cur=id;
+}
+function structureChanged(){ drawBoard(); resetGraph(); }
+function loadNode(i){
+  const o=i*G.stride;
+  S.blocks.forEach((b,k)=>{ b.x=G.states[o+2*k]; b.y=G.states[o+2*k+1]; });
+  G.cur=i; expand(i,true); drawBoard();
+}
+
+/* ------------------------------------------------------------------ *
+ *  Force-directed layout (spring + grid-hashed repulsion)
+ * ------------------------------------------------------------------ */
+const REST=1.2, KS=0.6, ETA=0.05, REP=1.6, RCUT=4.5, MAXSTEP=0.3, GRAV=0.002;
+const HT=1<<16, htab=new Int32Array(HT), hnextInit=new Int32Array(1);
+let hnext=hnextInit;
+function hcell(x,y,z){ return (((x*73856093)^(y*19349663)^(z*83492791))>>>0)&(HT-1); }
+function layoutStep(){
+  const n=G.N; if (n<2) return 0;
+  const p=G.pos, f=G.f;
+  f.fill(0,0,n*3);
+  for (let e=0;e<G.E;e++){
+    const a=G.ea[e]*3, b=G.eb[e]*3;
+    const dx=p[b]-p[a], dy=p[b+1]-p[a+1], dz=p[b+2]-p[a+2];
+    const d=Math.sqrt(dx*dx+dy*dy+dz*dz)+1e-6, m=KS*(d-REST)/d;
+    f[a]+=m*dx; f[a+1]+=m*dy; f[a+2]+=m*dz; f[b]-=m*dx; f[b+1]-=m*dy; f[b+2]-=m*dz;
+  }
+  htab.fill(-1);
+  if (hnext.length<n) hnext=new Int32Array(G.capN);
+  const inv=1/RCUT;
+  for (let i=0;i<n;i++){
+    const h=hcell(Math.floor(p[i*3]*inv),Math.floor(p[i*3+1]*inv),Math.floor(p[i*3+2]*inv));
+    hnext[i]=htab[h]; htab[h]=i;
+  }
+  const seen=new Int32Array(27), r2=RCUT*RCUT;
+  for (let i=0;i<n;i++){
+    const px=p[i*3], py=p[i*3+1], pz=p[i*3+2];
+    const cx=Math.floor(px*inv), cy=Math.floor(py*inv), cz=Math.floor(pz*inv);
+    let ns=0;
+    for (let a=-1;a<=1;a++) for (let b=-1;b<=1;b++) for (let c=-1;c<=1;c++){
+      const h=hcell(cx+a,cy+b,cz+c);
+      let dup=false; for (let k=0;k<ns;k++) if (seen[k]===h){ dup=true; break; }
+      if (dup) continue; seen[ns++]=h;
+      for (let j=htab[h];j>=0;j=hnext[j]){
+        if (j<=i) continue;
+        const dx=px-p[j*3], dy=py-p[j*3+1], dz=pz-p[j*3+2];
+        const d2=dx*dx+dy*dy+dz*dz; if (d2>=r2) continue;
+        const d=Math.sqrt(d2)+1e-4, m=REP/(d2+0.05)/d;
+        f[i*3]+=m*dx; f[i*3+1]+=m*dy; f[i*3+2]+=m*dz;
+        f[j*3]-=m*dx; f[j*3+1]-=m*dy; f[j*3+2]-=m*dz;
+      }
+    }
+  }
+  let total=0;
+  for (let i=0;i<n;i++){
+    for (let k=0;k<3;k++){
+      let s=(f[i*3+k]-GRAV*p[i*3+k])*ETA;
+      if (s>MAXSTEP) s=MAXSTEP; else if (s<-MAXSTEP) s=-MAXSTEP;
+      p[i*3+k]+=s; total+=Math.abs(s);
+    }
+  }
+  return total/n;
+}
+
+/* ------------------------------------------------------------------ *
+ *  Three.js scene
+ * ------------------------------------------------------------------ */
+const glCanvas=$('gl');
+const renderer=new THREE.WebGLRenderer({canvas:glCanvas,antialias:true});
+renderer.setClearColor(0x0a1128);
+const scene=new THREE.Scene();
+const camera=new THREE.PerspectiveCamera(50,1,0.005,6000);
+camera.position.set(0,0,10);
+const controls=new THREE.OrbitControls(camera,glCanvas);
+controls.enableDamping=true; controls.dampingFactor=0.08;
+controls.minDistance=0.02; controls.maxDistance=3000; controls.zoomSpeed=1.3;
+controls.enableRotate=true; controls.enablePan=true; controls.enableZoom=true;
+controls.screenSpacePanning=true; controls.panSpeed=1.2; controls.rotateSpeed=0.9;
+controls.mouseButtons={LEFT:THREE.MOUSE.ROTATE,MIDDLE:THREE.MOUSE.DOLLY,RIGHT:THREE.MOUSE.PAN};
+glCanvas.addEventListener('contextmenu',e=>e.preventDefault());
+let autoFit=true;
+controls.addEventListener('start',()=>{ autoFit=false; });
+
+const pointMat=new THREE.ShaderMaterial({
+  uniforms:{ uScale:{value:500}, uSize:{value:0.07} },
+  vertexShader:`uniform float uScale,uSize;
+    void main(){ vec4 mv=modelViewMatrix*vec4(position,1.0); gl_Position=projectionMatrix*mv;
+      gl_PointSize=clamp(uSize*uScale/-mv.z,2.5,70.0); }`,
+  fragmentShader:`void main(){ float d=length(gl_PointCoord-0.5); if(d>0.5) discard;
+      gl_FragColor=vec4(1.0,1.0,1.0,1.0); }`
+});
+const lineMat=new THREE.LineBasicMaterial({color:0xffffff,transparent:true,opacity:0.4});
+let points=null, lines=null, lpos=null;
+function rebuildGLBuffers(){
+  if (points){ scene.remove(points); points.geometry.dispose(); }
+  if (lines){ scene.remove(lines); lines.geometry.dispose(); }
+  const pg=new THREE.BufferGeometry();
+  pg.setAttribute('position',new THREE.BufferAttribute(G.pos,3).setUsage(THREE.DynamicDrawUsage));
+  points=new THREE.Points(pg,pointMat); points.frustumCulled=false; scene.add(points);
+  lpos=new Float32Array(G.capE*6);
+  const lg=new THREE.BufferGeometry();
+  lg.setAttribute('position',new THREE.BufferAttribute(lpos,3).setUsage(THREE.DynamicDrawUsage));
+  lines=new THREE.LineSegments(lg,lineMat); lines.frustumCulled=false; scene.add(lines);
+  G.glDirty=false;
+}
+
+/* marker */
+function circleTex(){
+  const c=document.createElement('canvas'); c.width=c.height=64; const x=c.getContext('2d');
+  const g=x.createRadialGradient(32,32,2,32,32,30);
+  g.addColorStop(0,'#ff6060'); g.addColorStop(.55,'#ff2d2d'); g.addColorStop(.75,'rgba(255,45,45,.35)'); g.addColorStop(1,'rgba(255,45,45,0)');
+  x.fillStyle=g; x.fillRect(0,0,64,64); return new THREE.CanvasTexture(c);
+}
+const marker=new THREE.Sprite(new THREE.SpriteMaterial({map:circleTex(),depthTest:false,transparent:true}));
+marker.renderOrder=10; scene.add(marker);
+
+/* thumbnail sprites for close-up view */
+const K=36, LOD_FAR=6, LOD_NEAR=3.5;
+let sprites=[];
+function buildSprites(){
+  sprites.forEach(s=>{ scene.remove(s); s.material.map.dispose(); s.material.dispose(); });
+  sprites=[];
+  const tw=192, th=Math.round(tw*G.rows/G.cols);
+  for (let i=0;i<K;i++){
+    const c=document.createElement('canvas'); c.width=tw; c.height=th;
+    const tex=new THREE.CanvasTexture(c); tex.minFilter=THREE.LinearFilter; tex.generateMipmaps=false;
+    const sp=new THREE.Sprite(new THREE.SpriteMaterial({map:tex,transparent:true,depthWrite:false}));
+    const w=0.75; sp.scale.set(w,w*G.rows/G.cols,1);
+    sp.visible=false; sp.userData={node:-1,sig:'',ctx:c.getContext('2d'),w:tw,h:th};
+    sp.renderOrder=5; scene.add(sp); sprites.push(sp);
+  }
+}
+function paintSprite(sp,node){
+  const o=node*G.stride, bl=[];
+  for (let b=0;b<G.B;b++) bl.push({x:G.states[o+2*b],y:G.states[o+2*b+1],w:G.bw[b],h:G.bh[b],color:G.bc[b]});
+  const cur=node===G.cur;
+  drawGrid(sp.userData.ctx,sp.userData.w,sp.userData.h,G.cols,G.rows,bl,
+    {pad:6,bw:cur?9:5,border:cur?'#ff4d4d':'#e8ecf5'});
+  sp.material.map.needsUpdate=true;
+}
+let lodTimer=0;
+function updateLOD(){
+  const cp=camera.position, best=[]; // [d2,node], ascending
+  const r2=LOD_FAR*LOD_FAR, p=G.pos;
+  for (let i=0;i<G.N;i++){
+    const dx=p[i*3]-cp.x, dy=p[i*3+1]-cp.y, dz=p[i*3+2]-cp.z, d2=dx*dx+dy*dy+dz*dz;
+    if (d2>r2) continue;
+    if (best.length<K || d2<best[best.length-1][0]){
+      let k=best.length; best.push([d2,i]);
+      while (k>0 && best[k-1][0]>d2){ best[k]=best[k-1]; k--; } best[k]=[d2,i];
+      if (best.length>K) best.pop();
+    }
+  }
+  // keep sprites on the same node where possible to avoid repainting
+  const want=new Map(best.map(b=>[b[1],b[0]]));
+  const free=[];
+  sprites.forEach(sp=>{
+    if (want.has(sp.userData.node)) want.set(sp.userData.node,-1); // already shown
+    else { sp.userData.node=-1; free.push(sp); }
+  });
+  for (const [node,d] of want){
+    if (d===-1) continue;
+    const sp=free.pop(); if (!sp) break;
+    sp.userData.node=node; sp.userData.sig='';
+  }
+  sprites.forEach(sp=>{
+    const n=sp.userData.node;
+    sp.visible=n>=0;
+    if (n>=0){
+      const sig=n+':'+(n===G.cur);
+      if (sig!==sp.userData.sig){ sp.userData.sig=sig; paintSprite(sp,n); }
+    }
+  });
+}
+function placeSprites(){
+  const cp=camera.position;
+  for (const sp of sprites){
+    const n=sp.userData.node; if (n<0||n>=G.N){ sp.visible=false; continue; }
+    const x=G.pos[n*3], y=G.pos[n*3+1], z=G.pos[n*3+2];
+    sp.position.set(x,y,z);
+    const d=Math.hypot(x-cp.x,y-cp.y,z-cp.z);
+    sp.material.opacity=Math.min(1,Math.max(0,(LOD_FAR-d)/(LOD_FAR-LOD_NEAR)));
+  }
+}
+
+/* ------------------------------------------------------------------ *
+ *  Resize, picking, main loop
+ * ------------------------------------------------------------------ */
+function resizeGL(){
+  const r=$('right'), w=r.clientWidth, h=r.clientHeight, dpr=Math.min(window.devicePixelRatio||1,2);
+  renderer.setPixelRatio(dpr); renderer.setSize(w,h,false);
+  camera.aspect=w/h; camera.updateProjectionMatrix();
+  pointMat.uniforms.uScale.value=(h*dpr)/(2*Math.tan(camera.fov*Math.PI/360));
+}
+new ResizeObserver(resizeGL).observe($('right'));
+
+let down=null;
+glCanvas.addEventListener('pointerdown',e=>{ down={x:e.clientX,y:e.clientY}; });
+glCanvas.addEventListener('pointerup',e=>{
+  if (!down || Math.hypot(e.clientX-down.x,e.clientY-down.y)>4){ down=null; return; }
+  down=null;
+  const r=glCanvas.getBoundingClientRect(), v=new THREE.Vector3(), mx=e.clientX-r.left, my=e.clientY-r.top;
+  let best=-1, bd=18*18;
+  camera.updateMatrixWorld();
+  for (let i=0;i<G.N;i++){
+    v.set(G.pos[i*3],G.pos[i*3+1],G.pos[i*3+2]).project(camera);
+    if (v.z>1||v.z<-1) continue;
+    const dx=(v.x*.5+.5)*r.width-mx, dy=(-v.y*.5+.5)*r.height-my, d=dx*dx+dy*dy;
+    if (d<bd){ bd=d; best=i; }
+  }
+  if (best>=0) loadNode(best);
+});
+
+$('fit').onclick=()=>{ autoFit=true; $('follow').checked=false; };
+$('findMe').onclick=()=>{
+  autoFit=false; $('follow').checked=true;
+  const d=camera.position.distanceTo(controls.target), dir=camera.position.clone().sub(controls.target).normalize();
+  controls.target.set(G.pos[G.cur*3],G.pos[G.cur*3+1],G.pos[G.cur*3+2]);
+  camera.position.copy(controls.target).addScaledVector(dir,Math.min(d,2.5));
+};
+$('rebuild').onclick=()=>resetGraph();
+$('axisOnly').onchange=()=>resetGraph();
+$('maxNodes').onchange=()=>resetGraph();
+$('noLimit').onchange=()=>{
+  const on=$('noLimit').checked;
+  $('limitWarn').style.display=on?'block':'none';
+  $('maxNodes').disabled=on;
+  resetGraph();
+};
+
+let acc=0, last=performance.now(), tmpV=new THREE.Vector3(), mpos=new THREE.Vector3(), mInit=false;
+function frame(now){
+  requestAnimationFrame(frame);
+  const dt=Math.min(0.1,(now-last)/1000); last=now;
+
+  // growth: speed slider 1..100 -> 20 .. 2000 nodes/s (exponential)
+  const rate=20*Math.pow(100,(+$('speed').value-1)/99);
+  acc+=rate*dt;
+  while (acc>=1){
+    acc-=1;
+    let i=-1;
+    while (G.qh<G.queue.length){ const c=G.queue[G.qh++]; if (!G.exp[c]){ i=c; break; } }
+    if (i<0){ acc=0; break; }
+    expand(i,false);
+  }
+
+  // layout
+  if (!G.settled){
+    const t0=performance.now(); let mv=1;
+    const steps=G.N<2500?3:G.N<8000?2:1;
+    for (let s=0;s<steps && performance.now()-t0<12;s++) mv=layoutStep();
+    const growing=G.qh<G.queue.length;
+    if (!growing && mv<2e-4) G.settled=true;
+  }
+
+  // buffers
+  if (G.glDirty) rebuildGLBuffers();
+  const p=G.pos;
+  for (let e=0;e<G.E;e++){
+    const a=G.ea[e]*3, b=G.eb[e]*3, o=e*6;
+    lpos[o]=p[a]; lpos[o+1]=p[a+1]; lpos[o+2]=p[a+2]; lpos[o+3]=p[b]; lpos[o+4]=p[b+1]; lpos[o+5]=p[b+2];
+  }
+  points.geometry.attributes.position.needsUpdate=true; points.geometry.setDrawRange(0,G.N);
+  lines.geometry.attributes.position.needsUpdate=true; lines.geometry.setDrawRange(0,G.E*2);
+
+  // marker
+  const cx=p[G.cur*3], cy=p[G.cur*3+1], cz=p[G.cur*3+2];
+  if (!mInit){ mpos.set(cx,cy,cz); mInit=true; } else mpos.lerp(tmpV.set(cx,cy,cz),0.25);
+  marker.position.copy(mpos);
+  const md=camera.position.distanceTo(mpos);
+  const ms=Math.max(0.07,md*0.028); marker.scale.set(ms,ms,1);
+
+  // camera helpers
+  if ($('follow').checked){
+    tmpV.copy(mpos).sub(controls.target).multiplyScalar(0.2);
+    controls.target.add(tmpV); camera.position.add(tmpV);
+  } else if (autoFit && G.N>0){
+    let sx=0,sy=0,sz=0; for (let i=0;i<G.N;i++){ sx+=p[i*3]; sy+=p[i*3+1]; sz+=p[i*3+2]; }
+    const c=new THREE.Vector3(sx/G.N,sy/G.N,sz/G.N); let r=0;
+    for (let i=0;i<G.N;i++) r=Math.max(r,Math.hypot(p[i*3]-c.x,p[i*3+1]-c.y,p[i*3+2]-c.z));
+    const want=Math.max(4,r*2.3);
+    const dir=camera.position.clone().sub(controls.target).normalize();
+    const d=camera.position.distanceTo(controls.target);
+    controls.target.lerp(c,0.06);
+    camera.position.copy(controls.target).addScaledVector(dir,d+(want-d)*0.05);
+  }
+  controls.update();
+
+  // close-up thumbnails
+  lodTimer-=dt;
+  if (lodTimer<=0){ lodTimer=0.12; updateLOD(); }
+  placeSprites();
+
+  renderer.render(scene,camera);
+}
+
+/* status line */
+setInterval(()=>{
+  const growing=G.qh<G.queue.length;
+  $('status').textContent=
+    `${G.N.toLocaleString()} states · ${G.E.toLocaleString()} moves · `+
+    (growing?(G.N>=G.cap?'node limit reached':'growing…'):'complete');
+},200);
+
+/* init */
+sizeBoard(); resizeGL();
+randomBlocks(3);
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>

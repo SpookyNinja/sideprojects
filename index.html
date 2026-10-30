@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Side Projects</title>
+<style>
+  :root { --bg:#0a1128; --card:#0e1733; --line:#2a3560; --fg:#dfe6ff; --dim:#8a96c4; --acc:#7c5cff; }
+  * { box-sizing:border-box; }
+  body { margin:0; min-height:100vh; background:var(--bg); color:var(--fg);
+    font:15px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif; }
+  main { max-width:960px; margin:0 auto; padding:48px 16px; }
+  h1 { margin:0 0 4px; font-size:28px; }
+  .sub { color:var(--dim); margin:0 0 28px; }
+  #search { width:100%; max-width:360px; margin-bottom:20px; padding:9px 12px; background:var(--card);
+    color:var(--fg); border:1px solid var(--line); border-radius:8px; font:inherit; }
+  #list { display:grid; grid-template-columns:repeat(auto-fill,minmax(260px,1fr)); gap:14px; }
+  a.card { display:flex; flex-direction:column; gap:8px; padding:16px; background:var(--card);
+    border:1px solid var(--line); border-radius:12px; color:inherit; text-decoration:none;
+    transition:border-color .15s, transform .15s; }
+  a.card:hover, a.card:focus-visible { border-color:var(--acc); transform:translateY(-2px); outline:none; }
+  .card h2 { margin:0; font-size:18px; }
+  .card p { margin:0; color:var(--dim); font-size:14px; flex:1; }
+  .tags { display:flex; flex-wrap:wrap; gap:6px; }
+  .tag { font-size:11px; padding:2px 8px; border-radius:999px; border:1px solid var(--line); color:var(--dim); }
+  #msg { color:var(--dim); }
+</style>
+</head>
+<body>
+<main>
+  <h1>Side Projects</h1>
+  <p class="sub">A collection of small experiments. Pick one to open it.</p>
+  <input id="search" type="search" placeholder="Filter projects…" aria-label="Filter projects" hidden>
+  <div id="list"></div>
+  <p id="msg">Loading…</p>
+</main>
+<script>
+/* Projects are listed in projects.json (same folder as this page).
+   To add a project: put it in its own folder and add an entry
+   {name, description, path, tags} to projects.json. */
+const list = document.getElementById('list'), msg = document.getElementById('msg'), search = document.getElementById('search');
+let projects = [];
+
+function render(filter = '') {
+  const q = filter.trim().toLowerCase();
+  list.textContent = '';
+  const shown = projects.filter(p =>
+    !q || [p.name, p.description, ...(p.tags || [])].join(' ').toLowerCase().includes(q));
+  for (const p of shown) {
+    const a = document.createElement('a');
+    a.className = 'card'; a.href = p.path;
+    const h = document.createElement('h2'); h.textContent = p.name;
+    const d = document.createElement('p'); d.textContent = p.description || '';
+    const t = document.createElement('div'); t.className = 'tags';
+    for (const tag of p.tags || []) { const s = document.createElement('span'); s.className = 'tag'; s.textContent = tag; t.appendChild(s); }
+    a.append(h, d, t); list.appendChild(a);
+  }
+  msg.textContent = shown.length ? '' : 'No projects match.';
+}
+
+fetch('projects.json', { cache: 'no-cache' })
+  .then(r => { if (!r.ok) throw new Error(r.status); return r.json(); })
+  .then(data => { projects = data; search.hidden = false; render(); })
+  .catch(() => { msg.textContent = 'Could not load projects.json. Serve this folder over HTTP (e.g. GitHub Pages or "python -m http.server"); opening the file directly is blocked by the browser.'; });
+
+search.addEventListener('input', () => render(search.value));
+</script>
+</body>
+</html>
