@@ -43,6 +43,7 @@ The user's original brief (paraphrased):
 ### Camera / mouse controls (3D view)
 - Left-drag rotate, right-drag or shift+left-drag pan, wheel zoom (very close zoom allowed), click a node to load it.
 - Buttons: **Fit view** (auto-frames graph; also the default until the user first touches the camera), **Zoom to marker**, **follow marker** checkbox, **Rebuild**.
+- **Home button** fixed at the bottom right (`#home`, links to `../index.html`).
 - Responsive: stacks vertically below 760 px width.
 
 ## Code map (all in `klotski.html`)
