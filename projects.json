@@ -42,6 +42,30 @@
     "tags": ["math", "fractal", "canvas"]
   },
   {
+    "name": "Lorenz Attractor Garden",
+    "description": "Release hundreds of glowing particles into chaotic systems (Lorenz, Rössler, Thomas, ...) and watch the butterfly effect pull them apart.",
+    "path": "lorenz-attractor/lorenz.html",
+    "tags": ["physics", "chaos", "3D", "three.js"]
+  },
+  {
+    "name": "Sorting Algorithm Theatre",
+    "description": "Twelve sorting algorithms race side by side on the same data as bars, colour wheels or sound, with live counts of compares and writes.",
+    "path": "sorting-theatre/sorting.html",
+    "tags": ["algorithms", "sorting", "canvas"]
+  },
+  {
+    "name": "Maze Generator & Pathfinder Race",
+    "description": "Generate mazes with DFS, Prim, Wilson or Kruskal, then race BFS, Dijkstra, A* and greedy search through them with heat-map trails.",
+    "path": "maze-pathfinder/maze.html",
+    "tags": ["algorithms", "pathfinding", "canvas"]
+  },
+  {
+    "name": "Graph & Map Colouring",
+    "description": "Colour a random map or your own graph so no neighbours match, and watch a backtracking solver try, clash and back up.",
+    "path": "graph-coloring/coloring.html",
+    "tags": ["algorithms", "graphs", "canvas"]
+  },
+  {
     "name": "Reaction-Diffusion",
     "description": "Gray-Scott chemistry on the GPU: paint chemicals and grow coral, spots, stripes and mazes, picked from a parameter map.",
     "path": "reaction-diffusion/reaction.html",
