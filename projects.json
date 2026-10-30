@@ -28,5 +28,11 @@
     "description": "Watch a small transformer read a sentence and write an answer token by token, with its embeddings, attention and neurons shown live.",
     "path": "llm-inside/llm-inside.html",
     "tags": ["AI", "visualization", "transformer"]
+  },
+  {
+    "name": "Word Embedding Space",
+    "description": "Fly through 6,000 words placed by their GloVe vectors, find neighbours and try word arithmetic like king - man + woman.",
+    "path": "word-embeddings/embeddings.html",
+    "tags": ["AI", "NLP", "3D", "three.js"]
   }
 ]
