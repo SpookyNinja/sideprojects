@@ -42,6 +42,18 @@
     "tags": ["math", "fractal", "canvas"]
   },
   {
+    "name": "Lorenz Attractor Garden",
+    "description": "Release hundreds of glowing particles into chaotic systems (Lorenz, Rössler, Thomas, ...) and watch the butterfly effect pull them apart.",
+    "path": "lorenz-attractor/lorenz.html",
+    "tags": ["physics", "chaos", "3D", "three.js"]
+  },
+  {
+    "name": "Sorting Algorithm Theatre",
+    "description": "Twelve sorting algorithms race side by side on the same data as bars, colour wheels or sound, with live counts of compares and writes.",
+    "path": "sorting-theatre/sorting.html",
+    "tags": ["algorithms", "sorting", "canvas"]
+  },
+  {
     "name": "Maze Generator & Pathfinder Race",
     "description": "Generate mazes with DFS, Prim, Wilson or Kruskal, then race BFS, Dijkstra, A* and greedy search through them with heat-map trails.",
     "path": "maze-pathfinder/maze.html",
