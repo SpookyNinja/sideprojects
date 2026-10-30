@@ -10,5 +10,11 @@
     "description": "Place three glowing bodies in 3D space, give each its own gravity, and watch their orbits unfold with fading trails.",
     "path": "three-body-gravity/threebody.html",
     "tags": ["physics", "simulation", "3D", "three.js"]
+  },
+  {
+    "name": "Fourier Drawing",
+    "description": "Draw any shape and watch it rebuilt by rotating epicycles (a Discrete Fourier Transform visualised).",
+    "path": "fourier-drawing/fourier.html",
+    "tags": ["math", "DFT", "canvas"]
   }
 ]
