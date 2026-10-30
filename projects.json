@@ -28,5 +28,11 @@
     "description": "Watch a small transformer read a sentence and write an answer token by token, with its embeddings, attention and neurons shown live.",
     "path": "llm-inside/llm-inside.html",
     "tags": ["AI", "visualization", "transformer"]
+  },
+  {
+    "name": "Lorenz Attractor Garden",
+    "description": "Release hundreds of glowing particles into chaotic systems (Lorenz, Rössler, Thomas, ...) and watch the butterfly effect pull them apart.",
+    "path": "lorenz-attractor/lorenz.html",
+    "tags": ["physics", "chaos", "3D", "three.js"]
   }
 ]
