@@ -82,5 +82,11 @@
     "description": "Place points and step through k-means and DBSCAN one move at a time, with explanations for every step.",
     "path": "clustering-steps/clustering.html",
     "tags": ["AI", "clustering", "canvas"]
+  },
+  {
+    "name": "Word Embedding Space",
+    "description": "Fly through 6,000 words placed by their GloVe vectors, find neighbours and try word arithmetic like king - man + woman.",
+    "path": "word-embeddings/embeddings.html",
+    "tags": ["AI", "NLP", "3D", "three.js"]
   }
 ]
