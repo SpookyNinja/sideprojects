@@ -28,5 +28,11 @@
     "description": "Watch a small transformer read a sentence and write an answer token by token, with its embeddings, attention and neurons shown live.",
     "path": "llm-inside/llm-inside.html",
     "tags": ["AI", "visualization", "transformer"]
+  },
+  {
+    "name": "Reaction-Diffusion",
+    "description": "Gray-Scott chemistry on the GPU: paint chemicals and grow coral, spots, stripes and mazes, picked from a parameter map.",
+    "path": "reaction-diffusion/reaction.html",
+    "tags": ["simulation", "patterns", "WebGL"]
   }
 ]
