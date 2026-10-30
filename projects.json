@@ -16,5 +16,11 @@
     "description": "Draw any shape and watch it rebuilt by rotating epicycles (a Discrete Fourier Transform visualised).",
     "path": "fourier-drawing/fourier.html",
     "tags": ["math", "DFT", "canvas"]
+  },
+  {
+    "name": "Game of Life Explorer",
+    "description": "Cellular automata playground: draw patterns, stamp from a pattern library, and try rule variants (Life, HighLife, Seeds and more) at adjustable speed.",
+    "path": "game-of-life-explorer/life.html",
+    "tags": ["cellular automata", "simulation", "canvas"]
   }
 ]
