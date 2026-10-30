@@ -30,6 +30,18 @@
     "tags": ["AI", "visualization", "transformer"]
   },
   {
+    "name": "Mandelbrot & Julia Explorer",
+    "description": "Zoom into the Mandelbrot set on the GPU and watch the matching Julia set change as you move over it.",
+    "path": "mandelbrot-julia/fractal.html",
+    "tags": ["math", "fractal", "WebGL"]
+  },
+  {
+    "name": "Chaos Game & IFS Ferns",
+    "description": "Random jumps towards corners or random affine maps build the Sierpinski triangle, Barnsley fern and other fractals from millions of points.",
+    "path": "chaos-game/chaos.html",
+    "tags": ["math", "fractal", "canvas"]
+  },
+  {
     "name": "Sorting Algorithm Theatre",
     "description": "Twelve sorting algorithms race side by side on the same data as bars, colour wheels or sound, with live counts of compares and writes.",
     "path": "sorting-theatre/sorting.html",
