@@ -28,5 +28,11 @@
     "description": "Watch a small transformer read a sentence and write an answer token by token, with its embeddings, attention and neurons shown live.",
     "path": "llm-inside/llm-inside.html",
     "tags": ["AI", "visualization", "transformer"]
+  },
+  {
+    "name": "Clustering Step by Step",
+    "description": "Place points and step through k-means and DBSCAN one move at a time, with explanations for every step.",
+    "path": "clustering-steps/clustering.html",
+    "tags": ["AI", "clustering", "canvas"]
   }
 ]
