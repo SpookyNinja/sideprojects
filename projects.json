@@ -28,5 +28,11 @@
     "description": "Watch a small transformer read a sentence and write an answer token by token, with its embeddings, attention and neurons shown live.",
     "path": "llm-inside/llm-inside.html",
     "tags": ["AI", "visualization", "transformer"]
+  },
+  {
+    "name": "Chaos Game & IFS Ferns",
+    "description": "Random jumps towards corners or random affine maps build the Sierpinski triangle, Barnsley fern and other fractals from millions of points.",
+    "path": "chaos-game/chaos.html",
+    "tags": ["math", "fractal", "canvas"]
   }
 ]
