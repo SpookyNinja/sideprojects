@@ -1,7 +1,7 @@
 [
   {
     "name": "Klotski State Space",
-    "description": "Build your own sliding-block puzzle and watch its entire state space grow as a 3D network. Zoom in to see each state as a picture.",
+    "description": "Build your own sliding-block puzzle (any shape, incl. L and T pieces) and watch its entire state space grow as a 3D network. Templates create Möbius strips, pyramids, tori and the classic Klotski.",
     "path": "klotski-state-space/klotski.html",
     "tags": ["puzzle", "3D", "three.js"]
   },

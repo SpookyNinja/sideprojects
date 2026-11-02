@@ -22,11 +22,12 @@
   .row { display:flex; flex-wrap:wrap; gap:6px; align-items:center; }
   button { background:#1a2552; color:var(--fg); border:1px solid var(--line); border-radius:6px;
     padding:5px 10px; font:inherit; cursor:pointer; }
-  [data-add], #addCustom { cursor:grab; touch-action:none; user-select:none; }
+  [data-add], #addCustom, #dragShape { cursor:grab; touch-action:none; user-select:none; }
   button:hover { background:#243272; border-color:var(--acc); }
   input[type=number] { width:52px; background:#0a1128; color:var(--fg); border:1px solid var(--line);
     border-radius:6px; padding:4px 6px; font:inherit; }
   input[type=number].wide { width:76px; }
+  select { background:#0a1128; color:var(--fg); border:1px solid var(--line); border-radius:6px; padding:5px 6px; font:inherit; max-width:240px; }
   label { color:var(--dim); display:inline-flex; align-items:center; gap:5px; }
   input[type=range] { width:110px; accent-color:var(--acc); }
   #hint { color:var(--dim); font-size:12px; }
@@ -52,7 +53,7 @@
   <div id="left">
     <div id="boardWrap"><canvas id="board"></canvas></div>
     <div id="msg"></div>
-    <div id="hint">Drag a block type from the palette onto the grid to place it. Drag placed blocks to slide them. Right-click or double-click a block (or select + Delete) to remove it.
+    <div id="hint">Drag a block type from the palette onto the grid to place it (press R while dragging to rotate, M to mirror). Drag placed blocks to slide them. Select a block and press R to rotate it. Right-click or double-click a block (or select + Delete) to remove it.
       Click a node in the graph to load that state.</div>
     <fieldset>
       <legend>Add block — drag onto the grid</legend>
@@ -65,15 +66,41 @@
         <button id="addCustom">Drag custom</button>
       </div>
       <div class="row" style="margin-top:6px">
+        <label title="Dragged blocks become immovable walls (shown hatched). They shape the state space."><input type="checkbox" id="asWall"> place as wall (immovable)</label>
+      </div>
+      <div class="row" style="margin-top:6px">
         <button id="randomize">3 random blocks</button>
         <button id="clear">Clear board</button>
+        <button id="rotSel" title="Rotate the selected block (R)">Rotate selected ⟳</button>
       </div>
+    </fieldset>
+    <fieldset>
+      <legend>Custom shape (L, T, …) — drag onto the grid</legend>
+      <div class="row" style="align-items:flex-start">
+        <canvas id="shapeEd" width="150" height="150" style="width:150px;height:150px;border:1px solid var(--line);border-radius:6px;touch-action:none;cursor:pointer"></canvas>
+        <div style="display:flex;flex-direction:column;gap:6px">
+          <button id="edRot">Rotate ⟳</button>
+          <button id="edMir">Mirror ⇋</button>
+          <button id="edClr">Clear</button>
+          <button id="dragShape">Drag shape</button>
+        </div>
+      </div>
+      <div class="row" id="presets" style="margin-top:6px"></div>
+      <div class="hint" style="font-size:11px;color:var(--dim);margin-top:4px">Click / paint cells in the editor (must be connected), or pick a preset, then drag the shape onto the grid.</div>
+    </fieldset>
+    <fieldset>
+      <legend>Templates — interesting state spaces</legend>
+      <div class="row">
+        <select id="tplSel"></select>
+        <button id="tplLoad">Load</button>
+      </div>
+      <div id="tplDesc" style="color:var(--dim);font-size:12px;margin-top:6px"></div>
     </fieldset>
     <fieldset>
       <legend>Grid size</legend>
       <div class="row">
-        <label>cols <input type="number" id="cols" min="2" max="10" value="4"></label>
-        <label>rows <input type="number" id="rows" min="2" max="10" value="5"></label>
+        <label>cols <input type="number" id="cols" min="1" max="10" value="4"></label>
+        <label>rows <input type="number" id="rows" min="1" max="10" value="5"></label>
         <button id="applyGrid">Apply</button>
       </div>
     </fieldset>
@@ -82,6 +109,7 @@
       <div class="row">
         <label>build speed <input type="range" id="speed" min="1" max="100" value="35"></label>
         <label title="Rectangles can only slide along their long side; squares still move freely"><input type="checkbox" id="axisOnly" checked> rectangles move along long side only</label>
+        <label title="Blocks with the same shape count as the same piece (swapping two of them is not a new state). Shrinks the state space; needed for a Möbius strip or the classic 25,955-state Klotski."><input type="checkbox" id="interch"> identical shapes are interchangeable</label>
       </div>
       <div class="row" style="margin-top:6px">
         <label>max nodes <input type="number" class="wide" id="maxNodes" min="100" max="10000000" step="1000" value="15000"></label>
@@ -113,29 +141,66 @@
  *  Puzzle state
  * ------------------------------------------------------------------ */
 const PALETTE = ['#ff4757','#7c3aed','#00a8b5','#2ed84a','#ffa502','#ffd32a','#ff6bcb','#3d8bff','#a4de02','#ff7f50','#18dcff','#c56cf0'];
+const WALL = '#3a4268';
 const S = { cols:4, rows:5, blocks:[], sel:-1, colorCounter:0 };
 const $ = id => document.getElementById(id);
 const DIRS = [[1,0],[-1,0],[0,1],[0,-1]];
 
 function msg(t){ $('msg').textContent = t || ''; if (t) setTimeout(()=>{ if ($('msg').textContent===t) $('msg').textContent=''; }, 2500); }
 
+/* ---- shapes (polyominoes): cells are [dx,dy] offsets, normalised to start at 0,0 ---- */
+function normShape(cells){
+  let mx=1e9,my=1e9; for (const [x,y] of cells){ if(x<mx)mx=x; if(y<my)my=y; }
+  const c=cells.map(([x,y])=>[x-mx,y-my]).sort((a,b)=>a[1]-b[1]||a[0]-b[0]);
+  let w=0,h=0; for (const [x,y] of c){ if(x+1>w)w=x+1; if(y+1>h)h=y+1; }
+  return { cells:c, w, h, rect:c.length===w*h };
+}
+function rectCells(w,h){ const c=[]; for (let y=0;y<h;y++) for (let x=0;x<w;x++) c.push([x,y]); return c; }
+const rectShape=(w,h)=>normShape(rectCells(w,h));
+const rotShape=s=>normShape(s.cells.map(([x,y])=>[s.h-1-y,x]));   // 90° clockwise
+const mirShape=s=>normShape(s.cells.map(([x,y])=>[s.w-1-x,y]));
+const shapeSig=s=>s.cells.map(c=>c[0]+'.'+c[1]).join(';');
+function connected(cells){
+  if (!cells.length) return false;
+  const set=new Set(cells.map(c=>c[0]+','+c[1])), seen=new Set([cells[0][0]+','+cells[0][1]]), st=[cells[0]];
+  while (st.length){ const [x,y]=st.pop();
+    for (const [dx,dy] of DIRS){ const k=(x+dx)+','+(y+dy); if (set.has(k)&&!seen.has(k)){ seen.add(k); st.push([x+dx,y+dy]); } } }
+  return seen.size===set.size;
+}
+const SHAPES = {
+  'corner':[[0,0],[0,1],[1,1]],
+  'L':[[0,0],[0,1],[0,2],[1,2]],
+  'T':[[0,0],[1,0],[2,0],[1,1]],
+  'S':[[1,0],[2,0],[0,1],[1,1]],
+  'plus':[[1,0],[0,1],[1,1],[2,1],[1,2]],
+  'U':[[0,0],[2,0],[0,1],[1,1],[2,1]],
+  'big L':[[0,0],[0,1],[0,2],[1,2],[2,2]],
+  'P':[[0,0],[1,0],[0,1],[1,1],[0,2]],
+  'big T':[[0,0],[1,0],[2,0],[1,1],[1,2]],
+};
+function mkBlock(shape,x,y,fixed){
+  const base=fixed?WALL:PALETTE[S.colorCounter++ % PALETTE.length];
+  return { cells:shape.cells, w:shape.w, h:shape.h, rect:shape.rect, x, y, fixed:!!fixed, base, color:base };
+}
+
 function occupancy(skip=-1){
   const occ = new Int16Array(S.cols*S.rows).fill(-1);
   S.blocks.forEach((b,i)=>{ if(i===skip) return;
-    for (let y=0;y<b.h;y++) for (let x=0;x<b.w;x++) occ[(b.y+y)*S.cols+b.x+x]=i; });
+    for (const [cx,cy] of b.cells) occ[(b.y+cy)*S.cols+b.x+cx]=i; });
   return occ;
 }
-function addBlock(w,h,silent){
-  if (w>S.cols || h>S.rows){ msg('Block does not fit the grid'); return false; }
+function fits(shape,x,y,occ){
+  if (x<0||y<0||x+shape.w>S.cols||y+shape.h>S.rows) return false;
+  for (const [cx,cy] of shape.cells) if (occ[(y+cy)*S.cols+x+cx]>=0) return false;
+  return true;
+}
+function addBlock(shape,silent,fixed){
+  if (shape.w>S.cols || shape.h>S.rows){ msg('Block does not fit the grid'); return false; }
   const occ = occupancy(), spots = [];
-  for (let y=0;y<=S.rows-h;y++) for (let x=0;x<=S.cols-w;x++){
-    let ok = true;
-    for (let j=0;j<h&&ok;j++) for (let i=0;i<w;i++) if (occ[(y+j)*S.cols+x+i]>=0){ ok=false; break; }
-    if (ok) spots.push([x,y]);
-  }
+  for (let y=0;y<=S.rows-shape.h;y++) for (let x=0;x<=S.cols-shape.w;x++) if (fits(shape,x,y,occ)) spots.push([x,y]);
   if (!spots.length){ msg('No free space for that block'); return false; }
   const [x,y] = spots[Math.random()*spots.length|0];
-  S.blocks.push({w,h,x,y,color:PALETTE[S.colorCounter++ % PALETTE.length]});
+  S.blocks.push(mkBlock(shape,x,y,fixed));
   S.sel = S.blocks.length-1;
   if (!silent) structureChanged();
   return true;
@@ -146,27 +211,84 @@ function removeBlock(i){
 }
 function randomBlocks(n=3){
   S.blocks=[]; S.sel=-1; S.colorCounter = Math.random()*PALETTE.length|0;
-  const sizes=[[1,2],[2,1],[1,1],[1,2],[2,1],[2,2]];
+  const pool=[rectShape(1,2),rectShape(2,1),rectShape(1,1),rectShape(1,2),rectShape(2,1),rectShape(2,2),
+    normShape(SHAPES.corner),normShape(SHAPES.L),normShape(SHAPES.T)];
   let guard=0;
   while (S.blocks.length<n && guard++<50){
-    const [w,h]=sizes[Math.random()*sizes.length|0];
-    addBlock(w,h,true);
+    let sh=pool[Math.random()*pool.length|0];
+    for (let r=Math.random()*4|0;r>0;r--) sh=rotShape(sh);
+    addBlock(sh,true);
   }
   S.sel=-1;
   structureChanged();
+}
+/* identical shapes share a colour when they are interchangeable */
+function recolor(){
+  const inter=$('interch').checked, first=new Map();
+  S.blocks.forEach(b=>{
+    if (b.fixed){ b.color=WALL; return; }
+    if (!inter){ b.color=b.base; return; }
+    const k=shapeSig(b); if (!first.has(k)) first.set(k,b.base); b.color=first.get(k);
+  });
 }
 
 /* ------------------------------------------------------------------ *
  *  Drawing (shared between board and 3D thumbnails)
  * ------------------------------------------------------------------ */
-function rr(ctx,x,y,w,h,r){
+function rrPath(ctx,x,y,w,h,r){
   r=Math.min(r,w/2,h/2);
-  ctx.beginPath(); ctx.moveTo(x+r,y); ctx.arcTo(x+w,y,x+w,y+h,r); ctx.arcTo(x+w,y+h,x,y+h,r);
+  ctx.moveTo(x+r,y); ctx.arcTo(x+w,y,x+w,y+h,r); ctx.arcTo(x+w,y+h,x,y+h,r);
   ctx.arcTo(x,y+h,x,y,r); ctx.arcTo(x,y,x+w,y,r); ctx.closePath();
 }
+function rr(ctx,x,y,w,h,r){ ctx.beginPath(); rrPath(ctx,x,y,w,h,r); }
 function geom(W,H,cols,rows,pad){
   const cell = Math.min((W-2*pad)/cols,(H-2*pad)/rows);
   return { cell, ox:(W-cell*cols)/2, oy:(H-cell*rows)/2 };
+}
+/* path of a block: one rounded rect for rectangles, otherwise rounded cells joined by bridges */
+function blockPath(ctx,b,X,Y,c){
+  const ins=c*0.08, rad=c*0.1;
+  ctx.beginPath();
+  if (b.rect){ rrPath(ctx,X+ins,Y+ins,b.w*c-2*ins,b.h*c-2*ins,rad); return; }
+  const set=new Set(b.cells.map(q=>q[0]+','+q[1]));
+  for (const [x,y] of b.cells){
+    const px=X+x*c, py=Y+y*c, r=set.has((x+1)+','+y), d=set.has(x+','+(y+1));
+    rrPath(ctx,px+ins,py+ins,c-2*ins,c-2*ins,rad);
+    if (r) ctx.rect(px+c-ins-1,py+ins,2*ins+2,c-2*ins);
+    if (d) ctx.rect(px+ins,py+c-ins-1,c-2*ins,2*ins+2);
+    if (r && d && set.has((x+1)+','+(y+1))) ctx.rect(px+c-ins-1,py+c-ins-1,2*ins+2,2*ins+2);
+  }
+}
+/* outline along the exposed sides only (so no inner lines between cells) */
+function blockOutline(ctx,b,X,Y,c){
+  if (b.rect){ blockPath(ctx,b,X,Y,c); ctx.stroke(); return; }
+  const ins=c*0.08, set=new Set(b.cells.map(q=>q[0]+','+q[1]));
+  ctx.beginPath();
+  for (const [x,y] of b.cells){
+    const x0=X+x*c+ins, y0=Y+y*c+ins, x1=X+(x+1)*c-ins, y1=Y+(y+1)*c-ins;
+    const L=set.has((x-1)+','+y), R=set.has((x+1)+','+y), U=set.has(x+','+(y-1)), D=set.has(x+','+(y+1));
+    if (!U){ ctx.moveTo(L?x0-2*ins:x0,y0); ctx.lineTo(R?x1+2*ins:x1,y0); }
+    if (!D){ ctx.moveTo(L?x0-2*ins:x0,y1); ctx.lineTo(R?x1+2*ins:x1,y1); }
+    if (!L){ ctx.moveTo(x0,U?y0-2*ins:y0); ctx.lineTo(x0,D?y1+2*ins:y1); }
+    if (!R){ ctx.moveTo(x1,U?y0-2*ins:y0); ctx.lineTo(x1,D?y1+2*ins:y1); }
+  }
+  ctx.lineCap='square'; ctx.stroke(); ctx.lineCap='butt';
+}
+function drawBlock(ctx,b,ox,oy,c,o={}){
+  const X=ox+b.x*c, Y=oy+b.y*c;
+  blockPath(ctx,b,X,Y,c);
+  ctx.globalAlpha=o.alpha ?? 1; ctx.fillStyle=o.fill || (b.fixed?WALL:b.color); ctx.fill(); ctx.globalAlpha=1;
+  if (b.fixed){                       // hatch walls
+    ctx.save(); blockPath(ctx,b,X,Y,c); ctx.clip();
+    ctx.strokeStyle='rgba(255,255,255,.18)'; ctx.lineWidth=Math.max(1,c*0.04); ctx.beginPath();
+    const W=b.w*c, H=b.h*c, st=Math.max(4,c*0.22);
+    for (let k=-H;k<W;k+=st){ ctx.moveTo(X+k,Y+H); ctx.lineTo(X+k+H,Y); }
+    ctx.stroke(); ctx.restore();
+  }
+  if (o.outline){
+    ctx.strokeStyle=o.outline; ctx.lineWidth=o.lw ?? 2; ctx.setLineDash(o.dash||[]);
+    blockOutline(ctx,b,X,Y,c); ctx.setLineDash([]);
+  }
 }
 function drawGrid(ctx,W,H,cols,rows,blocks,o={}){
   const pad=o.pad ?? 10, g=geom(W,H,cols,rows,pad), c=g.cell;
@@ -178,18 +300,10 @@ function drawGrid(ctx,W,H,cols,rows,blocks,o={}){
   const ds=Math.max(1.5,c*0.045);
   for (let y=0;y<rows;y++) for (let x=0;x<cols;x++)
     ctx.fillRect(g.ox+(x+.5)*c-ds,g.oy+(y+.5)*c-ds,ds*2,ds*2);
-  const ins=c*0.08;
+  blocks.forEach((b,i)=>{ if (b.fixed) drawBlock(ctx,b,g.ox,g.oy,c,{outline:i===o.sel?'#fff':null}); });
+  blocks.forEach((b,i)=>{ if (!b.fixed) drawBlock(ctx,b,g.ox,g.oy,c,{outline:i===o.sel?'#fff':null}); });
   const pv=o.preview;
-  blocks.forEach((b,i)=>{
-    ctx.fillStyle=b.color;
-    rr(ctx,g.ox+b.x*c+ins,g.oy+b.y*c+ins,b.w*c-2*ins,b.h*c-2*ins,c*0.1); ctx.fill();
-    if (i===o.sel){ ctx.strokeStyle='#fff'; ctx.lineWidth=2; ctx.stroke(); }
-  });
-  if (pv){
-    ctx.globalAlpha=0.65; ctx.fillStyle=pv.ok?pv.color:'#ff3b3b';
-    rr(ctx,g.ox+pv.x*c+ins,g.oy+pv.y*c+ins,pv.w*c-2*ins,pv.h*c-2*ins,c*0.1); ctx.fill();
-    ctx.globalAlpha=1; ctx.strokeStyle=pv.ok?'#fff':'#ff3b3b'; ctx.lineWidth=2; ctx.setLineDash([6,4]); ctx.stroke(); ctx.setLineDash([]);
-  }
+  if (pv) drawBlock(ctx,pv,g.ox,g.oy,c,{fill:pv.ok?pv.color:'#ff3b3b',alpha:.65,outline:pv.ok?'#fff':'#ff3b3b',dash:[6,4]});
 }
 
 /* ------------------------------------------------------------------ *
@@ -215,19 +329,19 @@ function cellAt(ev){
 function blockAt(fx,fy){
   const cx=Math.floor(fx), cy=Math.floor(fy);
   for (let i=S.blocks.length-1;i>=0;i--){ const b=S.blocks[i];
-    if (cx>=b.x&&cx<b.x+b.w&&cy>=b.y&&cy<b.y+b.h) return i; }
+    if (cx<b.x||cy<b.y||cx>=b.x+b.w||cy>=b.y+b.h) continue;
+    for (const [x,y] of b.cells) if (b.x+x===cx && b.y+y===cy) return i; }
   return -1;
 }
-function dirAllowed(w,h,dx,dy){
-  if (!$('axisOnly').checked || w===h) return true;
-  return w>h ? dy===0 : dx===0;
+function dirAllowed(b,dx,dy){
+  if (b.fixed) return false;
+  if (!$('axisOnly').checked || !b.rect || b.w===b.h) return true;
+  return b.w>b.h ? dy===0 : dx===0;
 }
 function tryStep(b,dx,dy){
-  if (!dirAllowed(b.w,b.h,dx,dy)) return false;
+  if (!dirAllowed(b,dx,dy)) return false;
   const nx=b.x+dx, ny=b.y+dy;
-  if (nx<0||ny<0||nx+b.w>S.cols||ny+b.h>S.rows) return false;
-  for (const o of S.blocks){ if (o===b) continue;
-    if (nx<o.x+o.w && nx+b.w>o.x && ny<o.y+o.h && ny+b.h>o.y) return false; }
+  if (!fits(b,nx,ny,occupancy(S.blocks.indexOf(b)))) return false;
   b.x=nx; b.y=ny; return true;
 }
 function moveToward(b,tx,ty){
@@ -246,7 +360,7 @@ board.addEventListener('pointerdown',ev=>{
   if (ev.button!==0) return;
   const {fx,fy}=cellAt(ev), i=blockAt(fx,fy);
   S.sel=i; drawBoard();
-  if (i<0) return;
+  if (i<0 || S.blocks[i].fixed) return;
   const b=S.blocks[i];
   drag={i,gx:fx-b.x,gy:fy-b.y};
   board.setPointerCapture(ev.pointerId); board.classList.add('drag');
@@ -264,71 +378,205 @@ board.addEventListener('contextmenu',ev=>{
   ev.preventDefault(); const {fx,fy}=cellAt(ev); removeBlock(blockAt(fx,fy));
 });
 board.addEventListener('dblclick',ev=>{ const {fx,fy}=cellAt(ev); removeBlock(blockAt(fx,fy)); });
+let paletteDrag=null;   // set while a shape is being dragged from the palette
 window.addEventListener('keydown',ev=>{
-  if (/INPUT|TEXTAREA/.test(document.activeElement.tagName)) return;
+  if (/INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName)) return;
+  if (paletteDrag){
+    if (ev.key==='r'||ev.key==='R'){ ev.preventDefault(); paletteDrag.transform(rotShape); }
+    if (ev.key==='m'||ev.key==='M'){ ev.preventDefault(); paletteDrag.transform(mirShape); }
+    return;
+  }
   if (ev.key==='Delete'||ev.key==='Backspace') removeBlock(S.sel);
+  if (ev.key==='r'||ev.key==='R') rotateSelected();
   const d={ArrowLeft:[-1,0],ArrowRight:[1,0],ArrowUp:[0,-1],ArrowDown:[0,1]}[ev.key];
   if (d && S.sel>=0){ ev.preventDefault(); if (tryStep(S.blocks[S.sel],d[0],d[1])){ onMoved(); drawBoard(); } }
 });
 
-function canPlace(w,h,x,y){
-  if (x<0||y<0||x+w>S.cols||y+h>S.rows) return false;
-  for (const o of S.blocks) if (x<o.x+o.w && x+w>o.x && y<o.y+o.h && y+h>o.y) return false;
-  return true;
+/* rotate the selected block in place (nudged if needed); changes the puzzle, so the graph is rebuilt */
+function rotateSelected(){
+  const i=S.sel; if (i<0||i>=S.blocks.length){ msg('Select a block first'); return; }
+  const b=S.blocks[i], ns=rotShape(b);
+  if (shapeSig(ns)===shapeSig(b)) return;
+  const occ=occupancy(i);
+  const offs=[[0,0],[1,0],[0,1],[-1,0],[0,-1],[1,1],[-1,1],[1,-1],[-1,-1],[2,0],[0,2],[-2,0],[0,-2]];
+  for (const [dx,dy] of offs){
+    if (fits(ns,b.x+dx,b.y+dy,occ)){
+      Object.assign(b,{cells:ns.cells,w:ns.w,h:ns.h,rect:ns.rect,x:b.x+dx,y:b.y+dy});
+      structureChanged(); return;
+    }
+  }
+  msg('No room to rotate this block here');
 }
-function placeBlock(w,h,x,y){
-  S.blocks.push({w,h,x,y,color:PALETTE[S.colorCounter++ % PALETTE.length]});
+function placeShape(shape,x,y,fixed){
+  S.blocks.push(mkBlock(shape,x,y,fixed));
   S.sel=S.blocks.length-1; structureChanged();
 }
-function startPaletteDrag(btn,getSize){
+function startPaletteDrag(btn,getShape){
   btn.addEventListener('pointerdown',ev=>{
     if (ev.button!==0) return;
     ev.preventDefault();
-    const [w,h]=getSize();
-    if (w<1||h<1||w>S.cols||h>S.rows){ msg('Block does not fit the grid'); return; }
-    const color=PALETTE[S.colorCounter % PALETTE.length];
-    const ghost=document.createElement('div');
-    ghost.style.cssText='position:fixed;z-index:99;pointer-events:none;border-radius:6px;opacity:.85;border:2px solid #fff8;background:'+color;
+    let shape=getShape(); if (!shape) return;
+    if (shape.w>S.cols||shape.h>S.rows){ msg('Block does not fit the grid'); return; }
+    const fixed=$('asWall').checked;
+    const color=fixed?WALL:PALETTE[S.colorCounter % PALETTE.length];
+    const ghost=document.createElement('canvas'), gx=ghost.getContext('2d');
+    ghost.style.cssText='position:fixed;z-index:99;pointer-events:none;opacity:.85';
     document.body.appendChild(ghost);
-    const sizeGhost=()=>{
-      const cell=geom(bW,bH,S.cols,S.rows,12).cell;
-      ghost.style.width=cell*w+'px'; ghost.style.height=cell*h+'px';
+    let lastEv=ev;
+    const paintGhost=()=>{
+      const cell=geom(bW,bH,S.cols,S.rows,12).cell, dpr=window.devicePixelRatio||1;
+      ghost.width=Math.ceil(cell*shape.w*dpr); ghost.height=Math.ceil(cell*shape.h*dpr);
+      ghost.style.width=cell*shape.w+'px'; ghost.style.height=cell*shape.h+'px';
+      gx.setTransform(dpr,0,0,dpr,0,0);
+      drawBlock(gx,{...shape,x:0,y:0,fixed},0,0,cell,{fill:color,outline:'#ffffffaa'});
     };
-    sizeGhost();
     const move=e=>{
+      lastEv=e;
       const cell=geom(bW,bH,S.cols,S.rows,12).cell;
-      ghost.style.left=(e.clientX-cell*w/2)+'px'; ghost.style.top=(e.clientY-cell*h/2)+'px';
+      ghost.style.left=(e.clientX-cell*shape.w/2)+'px'; ghost.style.top=(e.clientY-cell*shape.h/2)+'px';
       const r=board.getBoundingClientRect();
       const inside=e.clientX>=r.left&&e.clientX<=r.right&&e.clientY>=r.top&&e.clientY<=r.bottom;
       if (inside){
-        const {fx,fy}=cellAt(e), x=Math.round(fx-w/2), y=Math.round(fy-h/2);
-        preview={x,y,w,h,color,ok:canPlace(w,h,x,y)};
+        const {fx,fy}=cellAt(e), x=Math.round(fx-shape.w/2), y=Math.round(fy-shape.h/2);
+        preview={...shape,x,y,fixed,color,ok:fits(shape,x,y,occupancy())};
       } else preview=null;
       drawBoard();
     };
+    paletteDrag={ transform(f){ shape=f(shape); paintGhost(); move(lastEv); } };
     const up=e=>{
       window.removeEventListener('pointermove',move); window.removeEventListener('pointerup',up);
       window.removeEventListener('pointercancel',up);
-      ghost.remove();
+      ghost.remove(); paletteDrag=null;
       const p=preview; preview=null;
       if (p && e.type==='pointerup'){
-        if (p.ok) placeBlock(w,h,p.x,p.y); else { msg('Cannot place there: occupied or outside the grid'); drawBoard(); }
+        if (p.w>S.cols||p.h>S.rows) { msg('Block does not fit the grid'); drawBoard(); }
+        else if (p.ok) placeShape(shape,p.x,p.y,fixed); else { msg('Cannot place there: occupied or outside the grid'); drawBoard(); }
       } else drawBoard();
     };
     window.addEventListener('pointermove',move); window.addEventListener('pointerup',up);
     window.addEventListener('pointercancel',up);
-    move(ev);
+    paintGhost(); move(ev);
   });
 }
 document.querySelectorAll('[data-add]').forEach(btn=>
-  startPaletteDrag(btn,()=>btn.dataset.add.split(',').map(Number)));
-startPaletteDrag($('addCustom'),()=>[+$('cw').value|0,+$('ch').value|0]);
+  startPaletteDrag(btn,()=>{ const [w,h]=btn.dataset.add.split(',').map(Number); return rectShape(w,h); }));
+startPaletteDrag($('addCustom'),()=>{
+  const w=+$('cw').value|0, h=+$('ch').value|0;
+  if (w<1||h<1){ msg('Block does not fit the grid'); return null; }
+  return rectShape(w,h);
+});
 $('randomize').onclick=()=>randomBlocks(3);
 $('clear').onclick=()=>{ S.blocks=[]; S.sel=-1; structureChanged(); };
+$('rotSel').onclick=()=>rotateSelected();
 $('applyGrid').onclick=()=>{
-  S.cols=Math.min(10,Math.max(2,+$('cols').value|0)); S.rows=Math.min(10,Math.max(2,+$('rows').value|0));
+  S.cols=Math.min(10,Math.max(1,+$('cols').value|0)); S.rows=Math.min(10,Math.max(1,+$('rows').value|0));
   $('cols').value=S.cols; $('rows').value=S.rows; randomBlocks(3);
 };
+
+/* ------------------------------------------------------------------ *
+ *  Shape editor (5×5 cells, click or paint to toggle)
+ * ------------------------------------------------------------------ */
+const ED={ n:5, cells:new Set() }, edc=$('shapeEd'), edx=edc.getContext('2d');
+function edCells(){ return [...ED.cells].map(k=>k.split(',').map(Number)); }
+function edSet(cells){ ED.cells=new Set(cells.map(c=>c[0]+','+c[1])); edDraw(); }
+function edDraw(){
+  const n=ED.n, W=edc.width, c=W/n;
+  edx.fillStyle='#0a1128'; edx.fillRect(0,0,W,W);
+  edx.strokeStyle='#2a3560'; edx.lineWidth=1; edx.beginPath();
+  for (let i=1;i<n;i++){ edx.moveTo(i*c+.5,0); edx.lineTo(i*c+.5,W); edx.moveTo(0,i*c+.5); edx.lineTo(W,i*c+.5); }
+  edx.stroke();
+  const cells=edCells();
+  if (cells.length){
+    const ok=connected(cells);
+    drawBlock(edx,{cells,w:n,h:n,rect:false,x:0,y:0},0,0,c,{fill:ok?'#7c5cff':'#ff3b3b'});
+  }
+}
+let edPaint=null;
+function edCellAt(ev){
+  const r=edc.getBoundingClientRect(), n=ED.n;
+  const x=Math.floor((ev.clientX-r.left)/r.width*n), y=Math.floor((ev.clientY-r.top)/r.height*n);
+  return (x<0||y<0||x>=n||y>=n)?null:x+','+y;
+}
+edc.addEventListener('pointerdown',ev=>{
+  const k=edCellAt(ev); if (!k) return;
+  edPaint=!ED.cells.has(k); edc.setPointerCapture(ev.pointerId);
+  if (edPaint) ED.cells.add(k); else ED.cells.delete(k); edDraw();
+});
+edc.addEventListener('pointermove',ev=>{
+  if (edPaint===null) return; const k=edCellAt(ev); if (!k) return;
+  if (edPaint) ED.cells.add(k); else ED.cells.delete(k); edDraw();
+});
+edc.addEventListener('pointerup',()=>{ edPaint=null; });
+edc.addEventListener('pointercancel',()=>{ edPaint=null; });
+function edShape(){
+  const cells=edCells();
+  if (!cells.length){ msg('Draw a shape in the editor first'); return null; }
+  if (!connected(cells)){ msg('The shape must be connected (cells touching by their sides)'); return null; }
+  return normShape(cells);
+}
+$('edRot').onclick=()=>{ const c=edCells(); if (c.length) edSet(rotShape(normShape(c)).cells); };
+$('edMir').onclick=()=>{ const c=edCells(); if (c.length) edSet(mirShape(normShape(c)).cells); };
+$('edClr').onclick=()=>edSet([]);
+for (const name of Object.keys(SHAPES)){
+  const b=document.createElement('button'); b.textContent=name;
+  b.onclick=()=>edSet(SHAPES[name]); $('presets').appendChild(b);
+}
+startPaletteDrag($('dragShape'),edShape);
+edSet(SHAPES.L);
+
+/* ------------------------------------------------------------------ *
+ *  Templates: block setups whose state space has a recognisable shape
+ * ------------------------------------------------------------------ */
+const R=(w,h,x,y,fixed)=>({cells:rectCells(w,h),x,y,fixed});
+const P=(name,x,y)=>({cells:SHAPES[name],x,y});
+const TEMPLATES=[
+  { name:'Möbius strip', cols:5, rows:5, interch:true,
+    desc:'Two identical 1×1 blocks on a ring corridor (walls in the middle). Because swapping them is not a new state, the space of all positions is a Möbius strip: 120 states. Compare with "Cylinder".',
+    blocks:[R(3,3,1,1,true),R(1,1,0,0),R(1,1,4,4)] },
+  { name:'Cylinder (annulus)', cols:5, rows:5, interch:false,
+    desc:'The same ring as the Möbius strip, but the two blocks are distinguishable. The state space is a cylinder / ring with 240 states (it is the double cover of the Möbius strip).',
+    blocks:[R(3,3,1,1,true),R(1,1,0,0),R(1,1,4,4)] },
+  { name:'Pyramid (tetrahedron)', cols:10, rows:1,
+    desc:'Three blocks in a 1×10 corridor. They can never pass each other, so their positions a<b<c fill a triangular pyramid (3-simplex) of 120 states.',
+    blocks:[R(1,1,0,0),R(1,1,1,0),R(1,1,2,0)] },
+  { name:'Hyper-pyramid (4D simplex)', cols:10, rows:1,
+    desc:'Four blocks in a 1×10 corridor: a 4-dimensional pyramid with 210 states, squeezed into 3D.',
+    blocks:[R(1,1,0,0),R(1,1,1,0),R(1,1,2,0),R(1,1,3,0)] },
+  { name:'Triangle', cols:10, rows:1,
+    desc:'Two blocks in a 1×10 corridor: positions a<b form a flat triangle of 45 states.',
+    blocks:[R(1,1,0,0),R(1,1,1,0)] },
+  { name:'Cube 6×6×6', cols:6, rows:5,
+    desc:'Three blocks, each locked in its own lane by walls. They move independently, so the state space is a 6×6×6 cubic lattice (216 states).',
+    blocks:[R(6,1,0,1,true),R(6,1,0,3,true),R(1,1,0,0),R(1,1,0,2),R(1,1,0,4)] },
+  { name:'Torus (donut)', cols:9, rows:4,
+    desc:'Two separate ring corridors with one block each. Each block goes round in a circle independently: circle × circle = torus, 12×12 = 144 states.',
+    blocks:[R(2,2,1,1,true),R(1,4,4,0,true),R(2,2,6,1,true),R(1,1,0,0),R(1,1,5,0)] },
+  { name:'Plane (square sheet)', cols:7, rows:7,
+    desc:'A single block on an empty 7×7 board: the state space is just the board itself, a flat 7×7 grid.',
+    blocks:[R(1,1,3,3)] },
+  { name:'Classic Klotski (Huarong Dao)', cols:4, rows:5, interch:true, axisOnly:false, maxNodes:30000, speed:75,
+    desc:'The traditional puzzle: get the big 2×2 block to the bottom centre. With identical pieces interchangeable it has exactly 25,955 reachable states (layout gets heavy).',
+    blocks:[R(1,2,0,0),R(2,2,1,0),R(1,2,3,0),R(1,2,0,2),R(2,1,1,2),R(1,2,3,2),R(1,1,1,3),R(1,1,2,3),R(1,1,0,4),R(1,1,3,4)] },
+  { name:'L & T pieces', cols:5, rows:5, maxNodes:15000, speed:60,
+    desc:'An L, a T and a small corner piece on a 5×5 board: shows the custom shapes; large state space.',
+    blocks:[P('L',0,0),P('T',2,0),P('corner',3,3)] },
+];
+TEMPLATES.forEach((t,i)=>{ const o=document.createElement('option'); o.value=i; o.textContent=t.name; $('tplSel').appendChild(o); });
+const showTplDesc=()=>{ $('tplDesc').textContent=TEMPLATES[+$('tplSel').value].desc; };
+$('tplSel').onchange=showTplDesc; showTplDesc();
+function loadTemplate(t){
+  S.cols=t.cols; S.rows=t.rows; $('cols').value=t.cols; $('rows').value=t.rows;
+  $('axisOnly').checked=t.axisOnly ?? true;
+  $('interch').checked=!!t.interch;
+  $('noLimit').checked=false; $('limitWarn').style.display='none'; $('maxNodes').disabled=false;
+  $('maxNodes').value=t.maxNodes || 15000;
+  $('speed').value=t.speed || 45;
+  S.blocks=[]; S.sel=-1; S.colorCounter=0;
+  for (const d of t.blocks) S.blocks.push(mkBlock(normShape(d.cells),d.x,d.y,d.fixed));
+  autoFit=true; $('follow').checked=false;
+  structureChanged();
+}
+$('tplLoad').onclick=()=>loadTemplate(TEMPLATES[+$('tplSel').value]);
 
 /* ------------------------------------------------------------------ *
  *  State graph (built incrementally by BFS)
@@ -336,11 +584,14 @@ $('applyGrid').onclick=()=>{
 const MAX_NODES=100000000;
 const G = { N:0,E:0,cap:MAX_NODES,capN:0,capE:0,axisOnly:false,B:0,stride:0,cols:0,rows:0,
   states:null,pos:null,f:null,ea:null,eb:null,exp:null,map:new Map(),edgeSet:new Set(),
-  queue:[],qh:0,cur:0,bw:[],bh:[],bc:[],settled:false,occ:null,tmp:null };
+  queue:[],qh:0,cur:0,mi:[],bs:[],bc:[],axis:[],walls:[],wallOcc:null,groups:[],gOf:null,sc:null,
+  settled:false,occ:null,tmp:null };
 
+/* Only movable blocks are part of a state; walls are fixed obstacles (wallOcc = -2). */
 function resetGraph(){
-  const B=S.blocks.length;
-  G.B=B; G.stride=2*B; G.cols=S.cols; G.rows=S.rows;
+  const mi=[]; S.blocks.forEach((b,i)=>{ if (!b.fixed) mi.push(i); });
+  const B=mi.length;
+  G.mi=mi; G.B=B; G.stride=2*B; G.cols=S.cols; G.rows=S.rows;
   G.axisOnly=$('axisOnly').checked;
   G.cap=$('noLimit').checked?MAX_NODES:(Math.max(100,+$('maxNodes').value|0)||15000);
   G.capN=4096; G.capE=8192;
@@ -349,13 +600,39 @@ function resetGraph(){
   G.ea=new Int32Array(G.capE); G.eb=new Int32Array(G.capE);
   G.exp=new Uint8Array(G.capN);
   G.map=new Map(); G.edgeSet=new Set(); G.queue=[]; G.qh=0; G.N=0; G.E=0; G.settled=false;
-  G.bw=S.blocks.map(b=>b.w); G.bh=S.blocks.map(b=>b.h); G.bc=S.blocks.map(b=>b.color);
+  const mb=mi.map(i=>S.blocks[i]);
+  G.bs=mb.map(b=>({cells:b.cells,w:b.w,h:b.h,rect:b.rect}));
+  G.bc=mb.map(b=>b.color);
+  // axis rule: 0 free, 1 horizontal only, 2 vertical only (plain rectangles only)
+  G.axis=mb.map(b=>(G.axisOnly && b.rect && b.w!==b.h) ? (b.w>b.h?1:2) : 0);
+  G.walls=S.blocks.filter(b=>b.fixed);
+  G.wallOcc=new Int16Array(S.cols*S.rows).fill(-1);
+  for (const w of G.walls) for (const [cx,cy] of w.cells) G.wallOcc[(w.y+cy)*S.cols+w.x+cx]=-2;
+  // interchangeable groups: movable blocks with identical shape
+  G.groups=[]; G.gOf=new Int16Array(B).fill(-1);
+  if ($('interch').checked){
+    const bySig=new Map();
+    mb.forEach((b,k)=>{ const s=shapeSig(b); if (!bySig.has(s)) bySig.set(s,[]); bySig.get(s).push(k); });
+    for (const g of bySig.values()) if (g.length>1){ g.forEach(k=>G.gOf[k]=G.groups.length); G.groups.push(g); }
+  }
+  G.sc=new Int32Array(B+1);
   G.occ=new Int16Array(S.cols*S.rows); G.tmp=new Int16Array(G.stride);
-  const s=new Int16Array(G.stride);
-  S.blocks.forEach((b,i)=>{ s[2*i]=b.x; s[2*i+1]=b.y; });
-  G.cur=createNode(s,-1);
+  G.cur=createNode(boardState(),-1);
   expand(G.cur,true);
   rebuildGLBuffers(); buildSprites();
+}
+/* sort the positions of one group of identical blocks so equal states get equal keys */
+function canonGroup(s,g){
+  const n=g.length, cols=G.cols, t=G.sc;
+  for (let j=0;j<n;j++) t[j]=s[2*g[j]+1]*cols+s[2*g[j]];
+  for (let a=1;a<n;a++){ const v=t[a]; let b=a-1; while (b>=0 && t[b]>v){ t[b+1]=t[b]; b--; } t[b+1]=v; }
+  for (let j=0;j<n;j++){ s[2*g[j]]=t[j]%cols; s[2*g[j]+1]=(t[j]/cols)|0; }
+}
+function canonAll(s){ for (const g of G.groups) canonGroup(s,g); }
+function boardState(){
+  const s=new Int16Array(G.stride);
+  G.mi.forEach((bi,k)=>{ const b=S.blocks[bi]; s[2*k]=b.x; s[2*k+1]=b.y; });
+  canonAll(s); return s;
 }
 function growArr(a,n){ const r=new a.constructor(n); r.set(a); return r; }
 function ensureNodeCap(n){
@@ -391,24 +668,25 @@ function expand(i,force){
   if (G.exp[i]) return; G.exp[i]=1;
   const {B,stride,cols,rows,occ,tmp}=G, o=i*stride;
   let states=G.states;
-  occ.fill(-1);
+  occ.set(G.wallOcc);
   for (let b=0;b<B;b++){
     const x=states[o+2*b], y=states[o+2*b+1];
-    for (let j=0;j<G.bh[b];j++) for (let k=0;k<G.bw[b];k++) occ[(y+j)*cols+x+k]=b;
+    for (const [cx,cy] of G.bs[b].cells) occ[(y+cy)*cols+x+cx]=b;
   }
   for (let b=0;b<B;b++){
-    const x=states[o+2*b], y=states[o+2*b+1], w=G.bw[b], h=G.bh[b];
+    const x=states[o+2*b], y=states[o+2*b+1], sh=G.bs[b], w=sh.w, h=sh.h, ax=G.axis[b];
     for (const [dx,dy] of DIRS){
-      if (G.axisOnly && w!==h && (w>h ? dy!==0 : dx!==0)) continue;
+      if ((ax===1 && dy!==0) || (ax===2 && dx!==0)) continue;
       const nx=x+dx, ny=y+dy;
       if (nx<0||ny<0||nx+w>cols||ny+h>rows) continue;
       let ok=true;
-      for (let j=0;j<h&&ok;j++) for (let k=0;k<w;k++){
-        const c=occ[(ny+j)*cols+nx+k]; if (c>=0 && c!==b){ ok=false; break; }
+      for (const [cx,cy] of sh.cells){
+        const c=occ[(ny+cy)*cols+nx+cx]; if (c!==-1 && c!==b){ ok=false; break; }
       }
       if (!ok) continue;
       for (let k=0;k<stride;k++) tmp[k]=states[o+k];
       tmp[2*b]=nx; tmp[2*b+1]=ny;
+      if (G.gOf[b]>=0) canonGroup(tmp,G.groups[G.gOf[b]]);
       const key=tmp.join(',');
       let j=G.map.get(key);
       if (j===undefined){
@@ -420,21 +698,19 @@ function expand(i,force){
   }
 }
 function onMoved(){
-  const key=S.blocks.map(b=>b.x+','+b.y).join(',');
-  let id=G.map.get(key);
+  const s=boardState();
+  let id=G.map.get(s.join(','));
   if (id===undefined){
     if (G.N>=G.cap) return;
-    const s=new Int16Array(G.stride);
-    S.blocks.forEach((b,i)=>{ s[2*i]=b.x; s[2*i+1]=b.y; });
     id=createNode(s,G.cur);
   }
   expand(id,true);
   G.cur=id;
 }
-function structureChanged(){ drawBoard(); resetGraph(); }
+function structureChanged(){ recolor(); drawBoard(); resetGraph(); }
 function loadNode(i){
   const o=i*G.stride;
-  S.blocks.forEach((b,k)=>{ b.x=G.states[o+2*k]; b.y=G.states[o+2*k+1]; });
+  G.mi.forEach((bi,k)=>{ const b=S.blocks[bi]; b.x=G.states[o+2*k]; b.y=G.states[o+2*k+1]; });
   G.cur=i; expand(i,true); drawBoard();
 }
 
@@ -561,8 +837,9 @@ function buildSprites(){
   }
 }
 function paintSprite(sp,node){
-  const o=node*G.stride, bl=[];
-  for (let b=0;b<G.B;b++) bl.push({x:G.states[o+2*b],y:G.states[o+2*b+1],w:G.bw[b],h:G.bh[b],color:G.bc[b]});
+  const o=node*G.stride;
+  const bl=G.walls.slice();
+  for (let b=0;b<G.B;b++) bl.push({...G.bs[b],x:G.states[o+2*b],y:G.states[o+2*b+1],color:G.bc[b]});
   const cur=node===G.cur;
   drawGrid(sp.userData.ctx,sp.userData.w,sp.userData.h,G.cols,G.rows,bl,
     {pad:6,bw:cur?9:5,border:cur?'#ff4d4d':'#e8ecf5'});
@@ -650,6 +927,7 @@ $('findMe').onclick=()=>{
 };
 $('rebuild').onclick=()=>resetGraph();
 $('axisOnly').onchange=()=>resetGraph();
+$('interch').onchange=()=>structureChanged();
 $('maxNodes').onchange=()=>resetGraph();
 $('noLimit').onchange=()=>{
   const on=$('noLimit').checked;
